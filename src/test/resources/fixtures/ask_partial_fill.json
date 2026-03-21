@@ -1,0 +1,23 @@
+{
+  "name": "ask_partial_fill",
+  "description": "ASK order of 20 at 102 with phantom=5, buy trade of 8 partially fills 3 lots",
+  "initial_levels": [
+    {"bid_px": 100, "bid_sz": 50, "ask_px": 102, "ask_sz": 5}
+  ],
+  "events": [
+    {
+      "type": "submit_order",
+      "order": {"side": "Ask", "price": 102, "size": 20, "client_oid": "ASK_1", "order_type": "LIMIT", "tif": "GTC"},
+      "expected_reports": [
+        {"exec_type": "NEW", "order_status": "NEW", "client_oid": "ASK_1", "leaves_qty": 20}
+      ]
+    },
+    {
+      "type": "trade",
+      "side": "Bid", "price": 102, "size": 8,
+      "expected_reports": [
+        {"exec_type": "FILL", "order_status": "PARTIALLY_FILLED", "client_oid": "ASK_1", "filled_qty": 3, "leaves_qty": 17}
+      ]
+    }
+  ]
+}

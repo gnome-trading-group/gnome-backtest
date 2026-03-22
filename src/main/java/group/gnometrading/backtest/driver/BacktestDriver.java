@@ -4,6 +4,7 @@ import group.gnometrading.backtest.exchange.BacktestCancelOrder;
 import group.gnometrading.backtest.exchange.BacktestExecutionReport;
 import group.gnometrading.backtest.exchange.BacktestOrder;
 import group.gnometrading.backtest.exchange.SimulatedExchange;
+import group.gnometrading.backtest.recorder.BacktestRecorder;
 import group.gnometrading.collector.MarketDataEntry;
 import group.gnometrading.schemas.Schema;
 import group.gnometrading.schemas.SchemaType;
@@ -35,6 +36,7 @@ public class BacktestDriver {
     private final S3Client s3Client;
     private final String bucket;
 
+    private BacktestRecorder recorder;
     private PriorityQueue<BacktestEvent> queue;
     private boolean ready = false;
 
@@ -55,6 +57,14 @@ public class BacktestDriver {
         this.exchanges = exchanges;
         this.s3Client = s3Client;
         this.bucket = bucket;
+    }
+
+    public void setRecorder(BacktestRecorder recorder) {
+        this.recorder = recorder;
+    }
+
+    public BacktestRecorder getRecorder() {
+        return this.recorder;
     }
 
     /**
@@ -114,10 +124,16 @@ public class BacktestDriver {
             }
             case EXCHANGE_MESSAGE -> {
                 BacktestExecutionReport report = (BacktestExecutionReport) event.data;
+                if (recorder != null) {
+                    recorder.onExecutionReport(event.timestamp, report);
+                }
                 strategy.onExecutionReport(event.timestamp, report);
             }
             case LOCAL_MARKET_DATA -> {
                 Schema schema = (Schema) event.data;
+                if (recorder != null) {
+                    recorder.onMarketData(event.timestamp, schema);
+                }
                 List<LocalMessage> messages = strategy.onMarketData(event.timestamp, schema);
                 for (LocalMessage message : messages) {
                     SimulatedExchange exchange = getExchangeForMessage(message);

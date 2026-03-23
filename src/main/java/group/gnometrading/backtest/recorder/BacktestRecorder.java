@@ -3,138 +3,290 @@ package group.gnometrading.backtest.recorder;
 import group.gnometrading.backtest.exchange.BacktestExecutionReport;
 import group.gnometrading.schemas.*;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Arrays;
 
 public class BacktestRecorder {
 
-  private final List<MarketRecord> marketRecords = new ArrayList<>();
-  private final List<ExecutionRecord> executionRecords = new ArrayList<>();
+    private static final int INITIAL_MARKET_CAPACITY = 1_000_000;
+    private static final int INITIAL_EXEC_CAPACITY = 10_000;
 
-  public void onMarketData(long timestamp, Schema data) {
-    MarketRecord record = switch (data.schemaType) {
-      case MBP_10 -> fromMBP10(timestamp, (MBP10Schema) data);
-      case MBP_1 -> fromMBP1(timestamp, (MBP1Schema) data);
-      case BBO_1S -> fromBBO1S(timestamp, (BBO1SSchema) data);
-      case BBO_1M -> fromBBO1M(timestamp, (BBO1MSchema) data);
-      case TRADES -> fromTrades(timestamp, (TradesSchema) data);
-      case MBO -> fromMBO(timestamp, (MBOSchema) data);
-      case OHLCV_1S -> fromOHLCV1S(timestamp, (OHLCV1SSchema) data);
-      case OHLCV_1M -> fromOHLCV1M(timestamp, (OHLCV1MSchema) data);
-      case OHLCV_1H -> fromOHLCV1H(timestamp, (OHLCV1HSchema) data);
-    };
-    marketRecords.add(record);
-  }
+    // Market record columnar arrays
+    private int marketCount = 0;
+    private long[] marketTimestamp;
+    private int[]  marketExchangeId;
+    private long[] marketSecurityId;
+    private long[] marketBestBidPrice;
+    private long[] marketBestAskPrice;
+    private long[] marketBestBidSize;
+    private long[] marketBestAskSize;
+    private long[] marketLastTradePrice;
+    private long[] marketLastTradeSize;
+    private long[] marketSequenceNumber;
 
-  public void onExecutionReport(long timestamp, BacktestExecutionReport report) {
-    executionRecords.add(new ExecutionRecord(
-        report.timestampEvent,
-        report.timestampRecv,
-        report.exchangeId,
-        report.securityId,
-        report.clientOid,
-        report.side.name(),
-        report.execType.name(),
-        report.orderStatus.name(),
-        report.filledQty,
-        report.fillPrice,
-        report.cumulativeQty,
-        report.leavesQty,
-        report.fee));
-  }
+    // Execution record columnar arrays
+    private int execCount = 0;
+    private long[]   execTimestampEvent;
+    private long[]   execTimestampRecv;
+    private int[]    execExchangeId;
+    private int[]    execSecurityId;
+    private String[] execClientOid;
+    private String[] execSide;
+    private String[] execExecType;
+    private String[] execOrderStatus;
+    private long[]   execFilledQty;
+    private long[]   execFillPrice;
+    private long[]   execCumulativeQty;
+    private long[]   execLeavesQty;
+    private double[] execFee;
 
-  public List<MarketRecord> getMarketRecords() {
-    return marketRecords;
-  }
+    public BacktestRecorder() {
+        allocateMarketArrays(INITIAL_MARKET_CAPACITY);
+        allocateExecArrays(INITIAL_EXEC_CAPACITY);
+    }
 
-  public List<ExecutionRecord> getExecutionRecords() {
-    return executionRecords;
-  }
+    // --- Market data recording ---
 
-  public int getMarketRecordCount() {
-    return marketRecords.size();
-  }
+    public void onMarketData(long timestamp, Schema data) {
+        if (marketCount == marketTimestamp.length) {
+            growMarketArrays();
+        }
+        int i = marketCount++;
+        marketTimestamp[i] = timestamp;
 
-  public int getExecutionRecordCount() {
-    return executionRecords.size();
-  }
+        switch (data.schemaType) {
+            case MBP_10 -> writeMBP10(i, (MBP10Schema) data);
+            case MBP_1 -> writeMBP1(i, (MBP1Schema) data);
+            case BBO_1S -> writeBBO1S(i, (BBO1SSchema) data);
+            case BBO_1M -> writeBBO1M(i, (BBO1MSchema) data);
+            case TRADES -> writeTrades(i, (TradesSchema) data);
+            case MBO -> writeMBO(i, (MBOSchema) data);
+            case OHLCV_1S -> writeOHLCV1S(i, (OHLCV1SSchema) data);
+            case OHLCV_1M -> writeOHLCV1M(i, (OHLCV1MSchema) data);
+            case OHLCV_1H -> writeOHLCV1H(i, (OHLCV1HSchema) data);
+        }
+    }
 
-  public void clear() {
-    marketRecords.clear();
-    executionRecords.clear();
-  }
+    // --- Execution report recording ---
 
-  // --- Schema-specific extraction ---
+    public void onExecutionReport(long timestamp, BacktestExecutionReport report) {
+        if (execCount == execTimestampEvent.length) {
+            growExecArrays();
+        }
+        int i = execCount++;
+        execTimestampEvent[i] = report.timestampEvent;
+        execTimestampRecv[i] = report.timestampRecv;
+        execExchangeId[i] = report.exchangeId;
+        execSecurityId[i] = report.securityId;
+        execClientOid[i] = report.clientOid;
+        execSide[i] = report.side.name();
+        execExecType[i] = report.execType.name();
+        execOrderStatus[i] = report.orderStatus.name();
+        execFilledQty[i] = report.filledQty;
+        execFillPrice[i] = report.fillPrice;
+        execCumulativeQty[i] = report.cumulativeQty;
+        execLeavesQty[i] = report.leavesQty;
+        execFee[i] = report.fee;
+    }
 
-  private static MarketRecord fromMBP10(long timestamp, MBP10Schema s) {
-    var d = s.decoder;
-    return new MarketRecord(
-        timestamp, d.exchangeId(), d.securityId(),
-        d.bidPrice0(), d.askPrice0(), d.bidSize0(), d.askSize0(),
-        d.price(), d.size(), d.sequence());
-  }
+    // --- Counts ---
 
-  private static MarketRecord fromMBP1(long timestamp, MBP1Schema s) {
-    var d = s.decoder;
-    return new MarketRecord(
-        timestamp, d.exchangeId(), d.securityId(),
-        d.bidPrice0(), d.askPrice0(), d.bidSize0(), d.askSize0(),
-        d.price(), d.size(), d.sequence());
-  }
+    public int getMarketRecordCount() { return marketCount; }
+    public int getExecutionRecordCount() { return execCount; }
 
-  private static MarketRecord fromBBO1S(long timestamp, BBO1SSchema s) {
-    var d = s.decoder;
-    return new MarketRecord(
-        timestamp, d.exchangeId(), d.securityId(),
-        d.bidPrice0(), d.askPrice0(), d.bidSize0(), d.askSize0(),
-        d.price(), d.size(), d.sequence());
-  }
+    // --- Market array getters ---
 
-  private static MarketRecord fromBBO1M(long timestamp, BBO1MSchema s) {
-    var d = s.decoder;
-    return new MarketRecord(
-        timestamp, d.exchangeId(), d.securityId(),
-        d.bidPrice0(), d.askPrice0(), d.bidSize0(), d.askSize0(),
-        d.price(), d.size(), d.sequence());
-  }
+    public long[] getMarketTimestamps() { return marketTimestamp; }
+    public int[]  getMarketExchangeIds() { return marketExchangeId; }
+    public long[] getMarketSecurityIds() { return marketSecurityId; }
+    public long[] getMarketBestBidPrices() { return marketBestBidPrice; }
+    public long[] getMarketBestAskPrices() { return marketBestAskPrice; }
+    public long[] getMarketBestBidSizes() { return marketBestBidSize; }
+    public long[] getMarketBestAskSizes() { return marketBestAskSize; }
+    public long[] getMarketLastTradePrices() { return marketLastTradePrice; }
+    public long[] getMarketLastTradeSizes() { return marketLastTradeSize; }
+    public long[] getMarketSequenceNumbers() { return marketSequenceNumber; }
 
-  private static MarketRecord fromTrades(long timestamp, TradesSchema s) {
-    var d = s.decoder;
-    return new MarketRecord(
-        timestamp, d.exchangeId(), d.securityId(),
-        0, 0, 0, 0,
-        d.price(), d.size(), d.sequence());
-  }
+    // --- Execution array getters ---
 
-  private static MarketRecord fromMBO(long timestamp, MBOSchema s) {
-    var d = s.decoder;
-    return new MarketRecord(
-        timestamp, d.exchangeId(), d.securityId(),
-        0, 0, 0, 0,
-        d.price(), d.size(), d.sequence());
-  }
+    public long[]   getExecTimestampEvents() { return execTimestampEvent; }
+    public long[]   getExecTimestampRecvs() { return execTimestampRecv; }
+    public int[]    getExecExchangeIds() { return execExchangeId; }
+    public int[]    getExecSecurityIds() { return execSecurityId; }
+    public String[] getExecClientOids() { return execClientOid; }
+    public String[] getExecSides() { return execSide; }
+    public String[] getExecExecTypes() { return execExecType; }
+    public String[] getExecOrderStatuses() { return execOrderStatus; }
+    public long[]   getExecFilledQtys() { return execFilledQty; }
+    public long[]   getExecFillPrices() { return execFillPrice; }
+    public long[]   getExecCumulativeQtys() { return execCumulativeQty; }
+    public long[]   getExecLeavesQtys() { return execLeavesQty; }
+    public double[] getExecFees() { return execFee; }
 
-  private static MarketRecord fromOHLCV1S(long timestamp, OHLCV1SSchema s) {
-    var d = s.decoder;
-    return new MarketRecord(
-        timestamp, d.exchangeId(), d.securityId(),
-        d.close(), d.close(), 0, 0,
-        d.close(), 0, 0);
-  }
+    // --- Clear ---
 
-  private static MarketRecord fromOHLCV1M(long timestamp, OHLCV1MSchema s) {
-    var d = s.decoder;
-    return new MarketRecord(
-        timestamp, d.exchangeId(), d.securityId(),
-        d.close(), d.close(), 0, 0,
-        d.close(), 0, 0);
-  }
+    public void clear() {
+        marketCount = 0;
+        execCount = 0;
+    }
 
-  private static MarketRecord fromOHLCV1H(long timestamp, OHLCV1HSchema s) {
-    var d = s.decoder;
-    return new MarketRecord(
-        timestamp, d.exchangeId(), d.securityId(),
-        d.close(), d.close(), 0, 0,
-        d.close(), 0, 0);
-  }
+    // --- Allocation and growth ---
+
+    private void allocateMarketArrays(int capacity) {
+        marketTimestamp = new long[capacity];
+        marketExchangeId = new int[capacity];
+        marketSecurityId = new long[capacity];
+        marketBestBidPrice = new long[capacity];
+        marketBestAskPrice = new long[capacity];
+        marketBestBidSize = new long[capacity];
+        marketBestAskSize = new long[capacity];
+        marketLastTradePrice = new long[capacity];
+        marketLastTradeSize = new long[capacity];
+        marketSequenceNumber = new long[capacity];
+    }
+
+    private void allocateExecArrays(int capacity) {
+        execTimestampEvent = new long[capacity];
+        execTimestampRecv = new long[capacity];
+        execExchangeId = new int[capacity];
+        execSecurityId = new int[capacity];
+        execClientOid = new String[capacity];
+        execSide = new String[capacity];
+        execExecType = new String[capacity];
+        execOrderStatus = new String[capacity];
+        execFilledQty = new long[capacity];
+        execFillPrice = new long[capacity];
+        execCumulativeQty = new long[capacity];
+        execLeavesQty = new long[capacity];
+        execFee = new double[capacity];
+    }
+
+    private void growMarketArrays() {
+        int newCap = marketTimestamp.length * 2;
+        marketTimestamp = Arrays.copyOf(marketTimestamp, newCap);
+        marketExchangeId = Arrays.copyOf(marketExchangeId, newCap);
+        marketSecurityId = Arrays.copyOf(marketSecurityId, newCap);
+        marketBestBidPrice = Arrays.copyOf(marketBestBidPrice, newCap);
+        marketBestAskPrice = Arrays.copyOf(marketBestAskPrice, newCap);
+        marketBestBidSize = Arrays.copyOf(marketBestBidSize, newCap);
+        marketBestAskSize = Arrays.copyOf(marketBestAskSize, newCap);
+        marketLastTradePrice = Arrays.copyOf(marketLastTradePrice, newCap);
+        marketLastTradeSize = Arrays.copyOf(marketLastTradeSize, newCap);
+        marketSequenceNumber = Arrays.copyOf(marketSequenceNumber, newCap);
+    }
+
+    private void growExecArrays() {
+        int newCap = execTimestampEvent.length * 2;
+        execTimestampEvent = Arrays.copyOf(execTimestampEvent, newCap);
+        execTimestampRecv = Arrays.copyOf(execTimestampRecv, newCap);
+        execExchangeId = Arrays.copyOf(execExchangeId, newCap);
+        execSecurityId = Arrays.copyOf(execSecurityId, newCap);
+        execClientOid = Arrays.copyOf(execClientOid, newCap);
+        execSide = Arrays.copyOf(execSide, newCap);
+        execExecType = Arrays.copyOf(execExecType, newCap);
+        execOrderStatus = Arrays.copyOf(execOrderStatus, newCap);
+        execFilledQty = Arrays.copyOf(execFilledQty, newCap);
+        execFillPrice = Arrays.copyOf(execFillPrice, newCap);
+        execCumulativeQty = Arrays.copyOf(execCumulativeQty, newCap);
+        execLeavesQty = Arrays.copyOf(execLeavesQty, newCap);
+        execFee = Arrays.copyOf(execFee, newCap);
+    }
+
+    // --- Schema-specific field extraction (inline, no object creation) ---
+
+    private void writeMBP10(int i, MBP10Schema s) {
+        var d = s.decoder;
+        marketExchangeId[i] = d.exchangeId();
+        marketSecurityId[i] = d.securityId();
+        marketBestBidPrice[i] = d.bidPrice0();
+        marketBestAskPrice[i] = d.askPrice0();
+        marketBestBidSize[i] = d.bidSize0();
+        marketBestAskSize[i] = d.askSize0();
+        marketLastTradePrice[i] = d.price();
+        marketLastTradeSize[i] = d.size();
+        marketSequenceNumber[i] = d.sequence();
+    }
+
+    private void writeMBP1(int i, MBP1Schema s) {
+        var d = s.decoder;
+        marketExchangeId[i] = d.exchangeId();
+        marketSecurityId[i] = d.securityId();
+        marketBestBidPrice[i] = d.bidPrice0();
+        marketBestAskPrice[i] = d.askPrice0();
+        marketBestBidSize[i] = d.bidSize0();
+        marketBestAskSize[i] = d.askSize0();
+        marketLastTradePrice[i] = d.price();
+        marketLastTradeSize[i] = d.size();
+        marketSequenceNumber[i] = d.sequence();
+    }
+
+    private void writeBBO1S(int i, BBO1SSchema s) {
+        var d = s.decoder;
+        marketExchangeId[i] = d.exchangeId();
+        marketSecurityId[i] = d.securityId();
+        marketBestBidPrice[i] = d.bidPrice0();
+        marketBestAskPrice[i] = d.askPrice0();
+        marketBestBidSize[i] = d.bidSize0();
+        marketBestAskSize[i] = d.askSize0();
+        marketLastTradePrice[i] = d.price();
+        marketLastTradeSize[i] = d.size();
+        marketSequenceNumber[i] = d.sequence();
+    }
+
+    private void writeBBO1M(int i, BBO1MSchema s) {
+        var d = s.decoder;
+        marketExchangeId[i] = d.exchangeId();
+        marketSecurityId[i] = d.securityId();
+        marketBestBidPrice[i] = d.bidPrice0();
+        marketBestAskPrice[i] = d.askPrice0();
+        marketBestBidSize[i] = d.bidSize0();
+        marketBestAskSize[i] = d.askSize0();
+        marketLastTradePrice[i] = d.price();
+        marketLastTradeSize[i] = d.size();
+        marketSequenceNumber[i] = d.sequence();
+    }
+
+    private void writeTrades(int i, TradesSchema s) {
+        var d = s.decoder;
+        marketExchangeId[i] = d.exchangeId();
+        marketSecurityId[i] = d.securityId();
+        marketLastTradePrice[i] = d.price();
+        marketLastTradeSize[i] = d.size();
+        marketSequenceNumber[i] = d.sequence();
+    }
+
+    private void writeMBO(int i, MBOSchema s) {
+        var d = s.decoder;
+        marketExchangeId[i] = d.exchangeId();
+        marketSecurityId[i] = d.securityId();
+        marketLastTradePrice[i] = d.price();
+        marketLastTradeSize[i] = d.size();
+        marketSequenceNumber[i] = d.sequence();
+    }
+
+    private void writeOHLCV1S(int i, OHLCV1SSchema s) {
+        var d = s.decoder;
+        marketExchangeId[i] = d.exchangeId();
+        marketSecurityId[i] = d.securityId();
+        marketBestBidPrice[i] = d.close();
+        marketBestAskPrice[i] = d.close();
+        marketLastTradePrice[i] = d.close();
+    }
+
+    private void writeOHLCV1M(int i, OHLCV1MSchema s) {
+        var d = s.decoder;
+        marketExchangeId[i] = d.exchangeId();
+        marketSecurityId[i] = d.securityId();
+        marketBestBidPrice[i] = d.close();
+        marketBestAskPrice[i] = d.close();
+        marketLastTradePrice[i] = d.close();
+    }
+
+    private void writeOHLCV1H(int i, OHLCV1HSchema s) {
+        var d = s.decoder;
+        marketExchangeId[i] = d.exchangeId();
+        marketSecurityId[i] = d.securityId();
+        marketBestBidPrice[i] = d.close();
+        marketBestAskPrice[i] = d.close();
+        marketLastTradePrice[i] = d.close();
+    }
 }

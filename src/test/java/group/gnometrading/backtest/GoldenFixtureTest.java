@@ -63,7 +63,7 @@ class GoldenFixtureTest {
     // ---- Dummy models ----
 
     static class ZeroFeeModel implements FeeModel {
-        @Override public double calculateFee(long totalPrice, boolean isMaker) { return 0.0; }
+        @Override public double calculateFee(double totalPrice, boolean isMaker) { return 0.0; }
     }
 
     static class ZeroLatency implements LatencyModel {

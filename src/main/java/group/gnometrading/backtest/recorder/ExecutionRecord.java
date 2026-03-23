@@ -6,6 +6,7 @@ public record ExecutionRecord(
         int exchangeId,
         int securityId,
         String clientOid,
+        String side,
         String execType,
         String orderStatus,
         long filledQty,

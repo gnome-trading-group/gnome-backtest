@@ -10,7 +10,7 @@ import group.gnometrading.schemas.Schema;
 import group.gnometrading.schemas.SchemaType;
 import software.amazon.awssdk.services.s3.S3Client;
 
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
@@ -26,8 +26,8 @@ public class BacktestDriver {
 
     private static final Logger logger = Logger.getLogger(BacktestDriver.class.getName());
 
-    private final LocalDate startDate;
-    private final LocalDate endDate;
+    private final LocalDateTime startDate;
+    private final LocalDateTime endDate;
     private final List<MarketDataEntry> entries;
     private final SchemaType schemaType;
     private final BacktestStrategy strategy;
@@ -41,8 +41,8 @@ public class BacktestDriver {
     private boolean ready = false;
 
     public BacktestDriver(
-            LocalDate startDate,
-            LocalDate endDate,
+            LocalDateTime startDate,
+            LocalDateTime endDate,
             List<MarketDataEntry> entries,
             SchemaType schemaType,
             BacktestStrategy strategy,
@@ -189,6 +189,7 @@ public class BacktestDriver {
         if (message instanceof LocalMessage.OrderMessage om) {
             report.exchangeId = om.order().exchangeId();
             report.securityId = om.order().securityId();
+            report.side = om.order().side();
         } else if (message instanceof LocalMessage.CancelOrderMessage cm) {
             report.exchangeId = cm.cancelOrder().exchangeId();
             report.securityId = cm.cancelOrder().securityId();

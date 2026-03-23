@@ -33,6 +33,7 @@ public class BacktestRecorder {
         report.exchangeId,
         report.securityId,
         report.clientOid,
+        report.side.name(),
         report.execType.name(),
         report.orderStatus.name(),
         report.filledQty,

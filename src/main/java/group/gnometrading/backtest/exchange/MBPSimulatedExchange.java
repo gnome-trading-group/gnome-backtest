@@ -133,9 +133,10 @@ public class MBPSimulatedExchange implements SimulatedExchange {
     }
 
     private BacktestExecutionReport mapFillToReport(LocalOrder localOrder, long filledQty) {
-        long totalPrice = filledQty * localOrder.order.price();
-        double fee = feeModel.calculateFee(totalPrice, true);
-        long fillPrice = filledQty > 0 ? totalPrice / filledQty : 0;
+        // Use double to avoid overflow: price (~9e13) * size (~1e6) = ~9e19 exceeds Long.MAX_VALUE
+        double notional = (double) filledQty * localOrder.order.price();
+        double fee = feeModel.calculateFee(notional, true);
+        long fillPrice = localOrder.order.price();
         long cumulativeQty = localOrder.order.size() - localOrder.remaining;
 
         return new BacktestExecutionReport(
@@ -157,23 +158,23 @@ public class MBPSimulatedExchange implements SimulatedExchange {
         }
 
         long totalFilled = 0;
-        long totalPrice = 0;
+        double totalNotional = 0;
         for (OrderMatch match : matches) {
             totalFilled += match.size();
-            totalPrice += match.price() * match.size();
+            totalNotional += (double) match.price() * match.size();
         }
 
-        double fee = feeModel.calculateFee(totalPrice, false);
+        double fee = feeModel.calculateFee(totalNotional, false);
+        long vwapPrice = totalFilled > 0 ? (long) (totalNotional / totalFilled) : 0;
 
         if (totalFilled == order.size()) {
             return List.of(new BacktestExecutionReport(
                     order.clientOid(), ExecType.FILL, OrderStatus.FILLED,
-                    totalFilled, totalPrice / totalFilled, totalFilled, 0, fee));
+                    totalFilled, vwapPrice, totalFilled, 0, fee));
         } else {
-            // Partially filled market order
             return List.of(new BacktestExecutionReport(
                     order.clientOid(), ExecType.PARTIAL_FILL, OrderStatus.PARTIALLY_FILLED,
-                    totalFilled, totalFilled > 0 ? totalPrice / totalFilled : 0,
+                    totalFilled, vwapPrice,
                     totalFilled, order.size() - totalFilled, fee));
         }
     }
@@ -184,25 +185,25 @@ public class MBPSimulatedExchange implements SimulatedExchange {
 
         if (!matches.isEmpty()) {
             long totalFilled = 0;
-            long totalPrice = 0;
+            double totalNotional = 0;
             for (OrderMatch match : matches) {
                 totalFilled += match.size();
-                totalPrice += match.price() * match.size();
+                totalNotional += (double) match.price() * match.size();
             }
 
-            double fee = feeModel.calculateFee(totalPrice, true);
-            long fillPrice = totalPrice / totalFilled;
+            double fee = feeModel.calculateFee(totalNotional, true);
+            long vwapPrice = (long) (totalNotional / totalFilled);
 
             if (totalFilled == order.size()) {
                 return List.of(new BacktestExecutionReport(
                         order.clientOid(), ExecType.FILL, OrderStatus.FILLED,
-                        totalFilled, fillPrice, totalFilled, 0, fee));
+                        totalFilled, vwapPrice, totalFilled, 0, fee));
             }
 
             // Partial immediate fill
             BacktestExecutionReport partialFill = new BacktestExecutionReport(
                     order.clientOid(), ExecType.PARTIAL_FILL, OrderStatus.PARTIALLY_FILLED,
-                    totalFilled, fillPrice, totalFilled, order.size() - totalFilled, fee);
+                    totalFilled, vwapPrice, totalFilled, order.size() - totalFilled, fee);
 
             if (order.timeInForce() == TimeInForce.FILL_OR_KILL) {
                 return List.of(BacktestExecutionReport.rejected(order.clientOid()));

@@ -2,6 +2,7 @@ package group.gnometrading.backtest.exchange;
 
 import group.gnometrading.schemas.ExecType;
 import group.gnometrading.schemas.OrderStatus;
+import group.gnometrading.schemas.Side;
 
 public class BacktestExecutionReport {
 
@@ -18,6 +19,7 @@ public class BacktestExecutionReport {
     public long timestampRecv = -1;
     public int exchangeId = -1;
     public int securityId = -1;
+    public Side side = Side.None;
 
     public BacktestExecutionReport(
             String clientOid,

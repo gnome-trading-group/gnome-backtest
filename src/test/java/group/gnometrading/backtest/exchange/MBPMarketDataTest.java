@@ -30,7 +30,7 @@ class MBPMarketDataTest {
 
     static class DummyFeeModel implements FeeModel {
         @Override
-        public double calculateFee(long totalPrice, boolean isMaker) {
+        public double calculateFee(double totalPrice, boolean isMaker) {
             return totalPrice * (isMaker ? 0.03 : 0.05);
         }
     }

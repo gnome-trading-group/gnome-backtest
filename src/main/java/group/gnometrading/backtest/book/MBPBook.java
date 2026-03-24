@@ -244,11 +244,8 @@ public class MBPBook {
             }
 
             OrderBookLevel level = entry.getValue();
-            if (level.hasLocalOrders()) {
-                throw new IllegalStateException("Self filling triggered — price level " + levelPrice + " has local orders");
-            }
-            if (level.size == 0) {
-                throw new IllegalStateException("Malformed local book — price level has no size: " + levelPrice);
+            if (level.hasLocalOrders() || level.size == 0) {
+                continue;
             }
 
             long matchSize = Math.min(remainingSize, level.size);

@@ -8,7 +8,10 @@ import group.gnometrading.oms.OrderManagementSystem;
 import group.gnometrading.oms.intent.Intent;
 import group.gnometrading.oms.intent.OmsAction;
 import group.gnometrading.oms.order.OmsCancelOrder;
+import group.gnometrading.oms.order.OmsExecutionReport;
 import group.gnometrading.oms.order.OmsOrder;
+import group.gnometrading.oms.order.OmsReplaceOrder;
+import group.gnometrading.oms.state.TrackedOrder;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -16,59 +19,99 @@ import java.util.List;
 /**
  * Bridges the OMS intent system to BacktestDriver's LocalMessage format.
  *
- * Takes intents, runs them through the OMS (resolve → validate → track),
- * and converts approved actions to LocalMessage objects for the BacktestDriver.
- * All conversion happens in Java — no Python callbacks needed.
+ * Handles both directions:
+ *   - Intents → OMS → approved actions → LocalMessage (for simulated exchange)
+ *   - BacktestExecutionReport → OmsExecutionReport (for OMS fill processing)
  */
 public class OmsBacktestAdapter {
 
     private final OrderManagementSystem oms;
     private final List<LocalMessage> buffer = new ArrayList<>();
+    private final OmsExecutionReport omsReport = new OmsExecutionReport();
 
     public OmsBacktestAdapter(OrderManagementSystem oms) {
         this.oms = oms;
+        this.oms.setActionConsumer(this::onAction);
     }
 
     public List<LocalMessage> processIntents(Intent[] intents, int count) {
         buffer.clear();
         for (int i = 0; i < count; i++) {
-            oms.processIntent(intents[i], this::onAction);
+            oms.processIntent(intents[i]);
         }
         return buffer;
     }
 
     public List<LocalMessage> processIntent(Intent intent) {
         buffer.clear();
-        oms.processIntent(intent, this::onAction);
+        oms.processIntent(intent);
         return buffer;
     }
 
     public void processExecutionReport(BacktestExecutionReport report) {
-        oms.processExecutionReport(BacktestOmsAdapter.toOmsReport(report));
+        processExecutionReport(report, 0);
+    }
+
+    public void processExecutionReport(BacktestExecutionReport report, int strategyId) {
+        omsReport.set(
+                Long.parseLong(report.clientOid),
+                strategyId,
+                report.execType,
+                report.orderStatus,
+                report.filledQty,
+                report.fillPrice,
+                report.cumulativeQty,
+                report.leavesQty,
+                report.fee,
+                report.exchangeId,
+                report.securityId,
+                report.timestampEvent,
+                report.timestampRecv
+        );
+        oms.processExecutionReport(omsReport);
     }
 
     private void onAction(OmsAction action) {
-        if (action instanceof OmsAction.NewOrder newOrder) {
-            OmsOrder order = newOrder.order();
-            BacktestOrder btOrder = new BacktestOrder(
-                    order.exchangeId(),
-                    (int) order.securityId(),
-                    order.clientOid(),
-                    order.side(),
-                    order.price(),
-                    order.size(),
-                    order.orderType(),
-                    order.timeInForce()
-            );
-            buffer.add(new LocalMessage.OrderMessage(btOrder));
-        } else if (action instanceof OmsAction.Cancel cancel) {
-            OmsCancelOrder c = cancel.cancel();
-            BacktestCancelOrder btCancel = new BacktestCancelOrder(
-                    c.exchangeId(),
-                    (int) c.securityId(),
-                    c.clientOid()
-            );
-            buffer.add(new LocalMessage.CancelOrderMessage(btCancel));
+        switch (action.type()) {
+            case NEW_ORDER -> {
+                OmsOrder order = action.order();
+                buffer.add(new LocalMessage.OrderMessage(new BacktestOrder(
+                        order.exchangeId(),
+                        (int) order.securityId(),
+                        String.valueOf(order.clientOid()),
+                        order.side(),
+                        order.price(),
+                        order.size(),
+                        order.orderType(),
+                        order.timeInForce())));
+            }
+            case REPLACE -> {
+                // Backtest exchange doesn't support atomic cancel-replace; decompose into cancel + new
+                OmsReplaceOrder rep = action.replace();
+                buffer.add(new LocalMessage.CancelOrderMessage(new BacktestCancelOrder(
+                        rep.exchangeId(),
+                        (int) rep.securityId(),
+                        String.valueOf(rep.originalClientOid()))));
+                TrackedOrder tracked = oms.getOrder(rep.originalClientOid());
+                if (tracked != null) {
+                    buffer.add(new LocalMessage.OrderMessage(new BacktestOrder(
+                            rep.exchangeId(),
+                            (int) rep.securityId(),
+                            String.valueOf(rep.newClientOid()),
+                            tracked.getSide(),
+                            rep.price(),
+                            rep.size(),
+                            tracked.getOrderType(),
+                            tracked.getTimeInForce())));
+                }
+            }
+            case CANCEL -> {
+                OmsCancelOrder c = action.cancel();
+                buffer.add(new LocalMessage.CancelOrderMessage(new BacktestCancelOrder(
+                        c.exchangeId(),
+                        (int) c.securityId(),
+                        String.valueOf(c.clientOid()))));
+            }
         }
     }
 

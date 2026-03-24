@@ -2,7 +2,7 @@ package group.gnometrading.backtest.latency;
 
 import java.util.Random;
 
-public class GaussianLatency implements LatencyModel {
+public final class GaussianLatency implements LatencyModel {
 
     private final double mu;
     private final double sigma;

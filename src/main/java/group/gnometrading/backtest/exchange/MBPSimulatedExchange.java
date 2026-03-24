@@ -3,7 +3,7 @@ package group.gnometrading.backtest.exchange;
 import group.gnometrading.backtest.book.BidAskLevel;
 import group.gnometrading.backtest.book.LocalOrder;
 import group.gnometrading.backtest.book.LocalOrderFill;
-import group.gnometrading.backtest.book.MBPBook;
+import group.gnometrading.backtest.book.MbpBook;
 import group.gnometrading.backtest.book.OrderMatch;
 import group.gnometrading.backtest.fee.FeeModel;
 import group.gnometrading.backtest.latency.LatencyModel;
@@ -17,12 +17,11 @@ import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Schema;
 import group.gnometrading.schemas.SchemaType;
 import group.gnometrading.schemas.TimeInForce;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class MBPSimulatedExchange implements SimulatedExchange {
+public final class MbpSimulatedExchange implements SimulatedExchange {
 
     private static final long PRICE_NULL = Long.MIN_VALUE;
     private static final long SIZE_NULL = 4294967295L;
@@ -30,10 +29,10 @@ public class MBPSimulatedExchange implements SimulatedExchange {
     private final FeeModel feeModel;
     private final LatencyModel networkLatency;
     private final LatencyModel orderProcessingLatency;
-    private final MBPBook orderBook;
+    private final MbpBook orderBook;
     private final AtomicLong orderCounter = new AtomicLong(0);
 
-    public MBPSimulatedExchange(
+    public MbpSimulatedExchange(
             FeeModel feeModel,
             LatencyModel networkLatency,
             LatencyModel orderProcessingLatency,
@@ -41,15 +40,15 @@ public class MBPSimulatedExchange implements SimulatedExchange {
         this.feeModel = feeModel;
         this.networkLatency = networkLatency;
         this.orderProcessingLatency = orderProcessingLatency;
-        this.orderBook = new MBPBook(queueModel);
+        this.orderBook = new MbpBook(queueModel);
     }
 
     @Override
     public List<BacktestExecutionReport> onMarketData(Schema data) {
         if (data instanceof MBP10Schema mbp10) {
-            return onMBP10(mbp10);
+            return onMbp10(mbp10);
         } else if (data instanceof MBP1Schema mbp1) {
-            return onMBP1(mbp1);
+            return onMbp1(mbp1);
         }
         throw new IllegalArgumentException("Unsupported schema type: " + data.schemaType);
     }
@@ -92,10 +91,10 @@ public class MBPSimulatedExchange implements SimulatedExchange {
         return List.of(SchemaType.MBP_10, SchemaType.MBP_1);
     }
 
-    private List<BacktestExecutionReport> onMBP10(MBP10Schema schema) {
+    private List<BacktestExecutionReport> onMbp10(MBP10Schema schema) {
         Action action = schema.decoder.action();
         if (action == Action.Add || action == Action.Cancel || action == Action.Modify) {
-            List<BidAskLevel> levels = extractMBP10Levels(schema);
+            List<BidAskLevel> levels = extractMbp10Levels(schema);
             List<LocalOrderFill> fills = orderBook.onMarketUpdate(levels);
             return mapFillsToReports(fills);
         } else if (action == Action.Trade) {
@@ -108,10 +107,10 @@ public class MBPSimulatedExchange implements SimulatedExchange {
         return List.of();
     }
 
-    private List<BacktestExecutionReport> onMBP1(MBP1Schema schema) {
+    private List<BacktestExecutionReport> onMbp1(MBP1Schema schema) {
         Action action = schema.decoder.action();
         if (action == Action.Add || action == Action.Cancel || action == Action.Modify) {
-            List<BidAskLevel> levels = extractMBP1Levels(schema);
+            List<BidAskLevel> levels = extractMbp1Levels(schema);
             List<LocalOrderFill> fills = orderBook.onMarketUpdate(levels);
             return mapFillsToReports(fills);
         } else if (action == Action.Trade) {
@@ -233,26 +232,26 @@ public class MBPSimulatedExchange implements SimulatedExchange {
         return "client_" + orderCounter.incrementAndGet() + "_" + System.nanoTime();
     }
 
-    private List<BidAskLevel> extractMBP10Levels(MBP10Schema schema) {
-        var d = schema.decoder;
+    private List<BidAskLevel> extractMbp10Levels(MBP10Schema schema) {
+        var decoder = schema.decoder;
         List<BidAskLevel> levels = new ArrayList<>(10);
-        addLevel(levels, d.bidPrice0(), d.bidSize0(), d.askPrice0(), d.askSize0());
-        addLevel(levels, d.bidPrice1(), d.bidSize1(), d.askPrice1(), d.askSize1());
-        addLevel(levels, d.bidPrice2(), d.bidSize2(), d.askPrice2(), d.askSize2());
-        addLevel(levels, d.bidPrice3(), d.bidSize3(), d.askPrice3(), d.askSize3());
-        addLevel(levels, d.bidPrice4(), d.bidSize4(), d.askPrice4(), d.askSize4());
-        addLevel(levels, d.bidPrice5(), d.bidSize5(), d.askPrice5(), d.askSize5());
-        addLevel(levels, d.bidPrice6(), d.bidSize6(), d.askPrice6(), d.askSize6());
-        addLevel(levels, d.bidPrice7(), d.bidSize7(), d.askPrice7(), d.askSize7());
-        addLevel(levels, d.bidPrice8(), d.bidSize8(), d.askPrice8(), d.askSize8());
-        addLevel(levels, d.bidPrice9(), d.bidSize9(), d.askPrice9(), d.askSize9());
+        addLevel(levels, decoder.bidPrice0(), decoder.bidSize0(), decoder.askPrice0(), decoder.askSize0());
+        addLevel(levels, decoder.bidPrice1(), decoder.bidSize1(), decoder.askPrice1(), decoder.askSize1());
+        addLevel(levels, decoder.bidPrice2(), decoder.bidSize2(), decoder.askPrice2(), decoder.askSize2());
+        addLevel(levels, decoder.bidPrice3(), decoder.bidSize3(), decoder.askPrice3(), decoder.askSize3());
+        addLevel(levels, decoder.bidPrice4(), decoder.bidSize4(), decoder.askPrice4(), decoder.askSize4());
+        addLevel(levels, decoder.bidPrice5(), decoder.bidSize5(), decoder.askPrice5(), decoder.askSize5());
+        addLevel(levels, decoder.bidPrice6(), decoder.bidSize6(), decoder.askPrice6(), decoder.askSize6());
+        addLevel(levels, decoder.bidPrice7(), decoder.bidSize7(), decoder.askPrice7(), decoder.askSize7());
+        addLevel(levels, decoder.bidPrice8(), decoder.bidSize8(), decoder.askPrice8(), decoder.askSize8());
+        addLevel(levels, decoder.bidPrice9(), decoder.bidSize9(), decoder.askPrice9(), decoder.askSize9());
         return levels;
     }
 
-    private List<BidAskLevel> extractMBP1Levels(MBP1Schema schema) {
-        var d = schema.decoder;
+    private List<BidAskLevel> extractMbp1Levels(MBP1Schema schema) {
+        var decoder = schema.decoder;
         List<BidAskLevel> levels = new ArrayList<>(1);
-        addLevel(levels, d.bidPrice0(), d.bidSize0(), d.askPrice0(), d.askSize0());
+        addLevel(levels, decoder.bidPrice0(), decoder.bidSize0(), decoder.askPrice0(), decoder.askSize0());
         return levels;
     }
 

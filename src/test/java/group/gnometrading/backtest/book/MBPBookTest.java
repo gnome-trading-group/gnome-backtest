@@ -28,11 +28,11 @@ class MBPBookTest {
         return new BidAskLevel(bidPx, bidSz, askPx, askSz);
     }
 
-    MBPBook book;
+    MbpBook book;
 
     @BeforeEach
     void setUp() {
-        book = new MBPBook(new DummyQueueModel());
+        book = new MbpBook(new DummyQueueModel());
     }
 
     @Test

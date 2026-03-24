@@ -2,7 +2,6 @@ package group.gnometrading.backtest.driver;
 
 import group.gnometrading.backtest.exchange.BacktestExecutionReport;
 import group.gnometrading.schemas.Schema;
-
 import java.util.List;
 
 public interface BacktestStrategy {

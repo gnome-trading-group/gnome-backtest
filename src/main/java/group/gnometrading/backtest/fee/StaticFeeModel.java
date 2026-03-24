@@ -1,6 +1,6 @@
 package group.gnometrading.backtest.fee;
 
-public class StaticFeeModel implements FeeModel {
+public final class StaticFeeModel implements FeeModel {
 
     private final double takerFee;
     private final double makerFee;

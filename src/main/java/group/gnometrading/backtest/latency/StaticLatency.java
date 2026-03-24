@@ -1,6 +1,6 @@
 package group.gnometrading.backtest.latency;
 
-public class StaticLatency implements LatencyModel {
+public final class StaticLatency implements LatencyModel {
 
     private final long latencyNanos;
 

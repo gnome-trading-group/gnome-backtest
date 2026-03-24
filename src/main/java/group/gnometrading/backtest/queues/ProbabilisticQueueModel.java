@@ -1,7 +1,6 @@
 package group.gnometrading.backtest.queues;
 
 import group.gnometrading.backtest.book.LocalOrder;
-
 import java.util.ArrayDeque;
 
 /**
@@ -9,7 +8,7 @@ import java.util.ArrayDeque;
  * When depth decreases by D, phantom is reduced by round(p * D) where p in [0, 1].
  * Depth increases are assumed to arrive behind us.
  */
-public class ProbabilisticQueueModel implements QueueModel {
+public final class ProbabilisticQueueModel implements QueueModel {
 
     private final double cancelAheadProbability;
 

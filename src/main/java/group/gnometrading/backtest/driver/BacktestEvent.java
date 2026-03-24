@@ -1,6 +1,6 @@
 package group.gnometrading.backtest.driver;
 
-public class BacktestEvent implements Comparable<BacktestEvent> {
+public final class BacktestEvent implements Comparable<BacktestEvent> {
 
     public final long timestamp;
     public final EventType eventType;
@@ -15,7 +15,9 @@ public class BacktestEvent implements Comparable<BacktestEvent> {
     @Override
     public int compareTo(BacktestEvent other) {
         int cmp = Long.compare(this.timestamp, other.timestamp);
-        if (cmp != 0) return cmp;
+        if (cmp != 0) {
+            return cmp;
+        }
         // Secondary ordering: EXCHANGE_MARKET_DATA before LOCAL_MARKET_DATA at same timestamp
         return Integer.compare(this.eventType.value, other.eventType.value);
     }

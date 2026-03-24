@@ -8,13 +8,12 @@ import group.gnometrading.backtest.recorder.BacktestRecorder;
 import group.gnometrading.collector.MarketDataEntry;
 import group.gnometrading.schemas.Schema;
 import group.gnometrading.schemas.SchemaType;
-import software.amazon.awssdk.services.s3.S3Client;
-
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.logging.Logger;
+import software.amazon.awssdk.services.s3.S3Client;
 
 /**
  * Drives a backtest by replaying market data from S3 through the exchange simulation and strategy.
@@ -22,7 +21,7 @@ import java.util.logging.Logger;
  * Event ordering: EXCHANGE_MARKET_DATA < EXCHANGE_MESSAGE < LOCAL_MARKET_DATA < LOCAL_MESSAGE
  * at the same timestamp, ensuring the exchange processes data before the strategy sees it.
  */
-public class BacktestDriver {
+public final class BacktestDriver {
 
     private static final Logger logger = Logger.getLogger(BacktestDriver.class.getName());
 

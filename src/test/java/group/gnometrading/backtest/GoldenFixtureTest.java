@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import group.gnometrading.backtest.exchange.BacktestCancelOrder;
 import group.gnometrading.backtest.exchange.BacktestExecutionReport;
 import group.gnometrading.backtest.exchange.BacktestOrder;
-import group.gnometrading.backtest.exchange.MBPSimulatedExchange;
+import group.gnometrading.backtest.exchange.MbpSimulatedExchange;
 import group.gnometrading.backtest.fee.FeeModel;
 import group.gnometrading.backtest.latency.LatencyModel;
 import group.gnometrading.backtest.queues.QueueModel;
@@ -94,7 +94,7 @@ class GoldenFixtureTest {
         ObjectMapper mapper = new ObjectMapper();
         Fixture fixture = mapper.readValue(path.toFile(), Fixture.class);
 
-        MBPSimulatedExchange exchange = new MBPSimulatedExchange(
+        MbpSimulatedExchange exchange = new MbpSimulatedExchange(
                 new ZeroFeeModel(), new ZeroLatency(), new ZeroLatency(), new PassthroughQueueModel());
 
         // Seed initial book state

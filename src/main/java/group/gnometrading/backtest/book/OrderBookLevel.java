@@ -2,7 +2,7 @@ package group.gnometrading.backtest.book;
 
 import java.util.ArrayDeque;
 
-public class OrderBookLevel {
+public final class OrderBookLevel {
 
     public final long price;
     public long size;

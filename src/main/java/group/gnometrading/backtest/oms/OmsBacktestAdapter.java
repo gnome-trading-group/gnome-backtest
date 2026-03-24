@@ -12,7 +12,6 @@ import group.gnometrading.oms.order.OmsExecutionReport;
 import group.gnometrading.oms.order.OmsOrder;
 import group.gnometrading.oms.order.OmsReplaceOrder;
 import group.gnometrading.oms.state.TrackedOrder;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -23,7 +22,7 @@ import java.util.List;
  *   - Intents → OMS → approved actions → LocalMessage (for simulated exchange)
  *   - BacktestExecutionReport → OmsExecutionReport (for OMS fill processing)
  */
-public class OmsBacktestAdapter {
+public final class OmsBacktestAdapter {
 
     private final OrderManagementSystem oms;
     private final List<LocalMessage> buffer = new ArrayList<>();
@@ -106,11 +105,11 @@ public class OmsBacktestAdapter {
                 }
             }
             case CANCEL -> {
-                OmsCancelOrder c = action.cancel();
+                OmsCancelOrder cancel = action.cancel();
                 buffer.add(new LocalMessage.CancelOrderMessage(new BacktestCancelOrder(
-                        c.exchangeId(),
-                        (int) c.securityId(),
-                        String.valueOf(c.clientOid()))));
+                        cancel.exchangeId(),
+                        (int) cancel.securityId(),
+                        String.valueOf(cancel.clientOid()))));
             }
         }
     }

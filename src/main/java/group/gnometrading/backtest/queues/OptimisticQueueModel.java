@@ -1,7 +1,6 @@
 package group.gnometrading.backtest.queues;
 
 import group.gnometrading.backtest.book.LocalOrder;
-
 import java.util.ArrayDeque;
 
 /**
@@ -9,7 +8,7 @@ import java.util.ArrayDeque;
  * When displayed depth decreases, phantom is reduced by the removed volume (floored at zero).
  * When depth increases, phantom is unchanged.
  */
-public class OptimisticQueueModel implements QueueModel {
+public final class OptimisticQueueModel implements QueueModel {
 
     @Override
     public void onModify(long previousQuantity, long newQuantity, ArrayDeque<LocalOrder> localQueue) {

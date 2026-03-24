@@ -40,11 +40,11 @@ class MBPMarketDataTest {
         public long simulate() { return 0; }
     }
 
-    MBPSimulatedExchange exchange;
+    MbpSimulatedExchange exchange;
 
     @BeforeEach
     void setUp() {
-        exchange = new MBPSimulatedExchange(new DummyFeeModel(), new ZeroLatency(), new ZeroLatency(), new DummyQueueModel());
+        exchange = new MbpSimulatedExchange(new DummyFeeModel(), new ZeroLatency(), new ZeroLatency(), new DummyQueueModel());
     }
 
     /** Creates an MBP10 market update with up to two bid/ask levels. */

@@ -2,7 +2,6 @@ package group.gnometrading.backtest.exchange;
 
 import group.gnometrading.schemas.Schema;
 import group.gnometrading.schemas.SchemaType;
-
 import java.util.List;
 
 public interface SimulatedExchange {

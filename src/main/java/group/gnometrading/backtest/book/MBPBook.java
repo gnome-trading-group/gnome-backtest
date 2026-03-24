@@ -4,10 +4,17 @@ import group.gnometrading.backtest.exchange.BacktestOrder;
 import group.gnometrading.backtest.queues.QueueModel;
 import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Side;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 
-import java.util.*;
-
-public class MBPBook {
+public final class MbpBook {
 
     private static final long PRICE_NULL = Long.MIN_VALUE;
 
@@ -21,7 +28,7 @@ public class MBPBook {
     private final Map<String, LocalOrder> localBidOrders = new HashMap<>();
     private final Map<String, LocalOrder> localAskOrders = new HashMap<>();
 
-    public MBPBook(QueueModel queueModel) {
+    public MbpBook(QueueModel queueModel) {
         this.queueModel = queueModel;
     }
 
@@ -64,8 +71,14 @@ public class MBPBook {
 
         // Book is crossed — check for fills
         List<LocalOrderFill> allFills = new ArrayList<>();
+        checkBidFills(bestAsk, allFills);
+        checkAskFills(bestBid, allFills);
 
-        // Check local bid orders that can be filled against the ask side
+        clearFills(allFills);
+        return allFills;
+    }
+
+    private void checkBidFills(Long bestAsk, List<LocalOrderFill> allFills) {
         for (long bidPrice : bids.keySet()) {
             if (bidPrice < bestAsk) {
                 break;
@@ -91,8 +104,9 @@ public class MBPBook {
                 askLevel.size -= filledQty;
             }
         }
+    }
 
-        // Check local ask orders that can be filled against the bid side
+    private void checkAskFills(Long bestBid, List<LocalOrderFill> allFills) {
         for (long askPrice : asks.keySet()) {
             if (askPrice > bestBid) {
                 break;
@@ -118,9 +132,6 @@ public class MBPBook {
                 bidLevel.size -= filledQty;
             }
         }
-
-        clearFills(allFills);
-        return allFills;
     }
 
     /**
@@ -144,10 +155,7 @@ public class MBPBook {
             long levelPrice = entry.getKey();
             // For ask levels: stop if ask price > trade price (trade can't reach here)
             // For bid levels: stop if bid price < trade price
-            if (tradeIsBid && levelPrice > price) {
-                break;
-            }
-            if (!tradeIsBid && levelPrice < price) {
+            if (tradeIsBid ? levelPrice > price : levelPrice < price) {
                 break;
             }
 
@@ -221,7 +229,7 @@ public class MBPBook {
 
     /**
      * Returns immediate matches for the order by walking the opposite side of the book.
-     * Throws if self-filling would occur.
+     * Skips levels with local orders to avoid self-fills.
      */
     public List<OrderMatch> getMatchingOrders(BacktestOrder order) {
         List<OrderMatch> matches = new ArrayList<>();
@@ -235,10 +243,7 @@ public class MBPBook {
             }
             long levelPrice = entry.getKey();
             if (order.orderType() == OrderType.LIMIT) {
-                if (isBuy && levelPrice > order.price()) {
-                    break;
-                }
-                if (!isBuy && levelPrice < order.price()) {
+                if (isBuy ? levelPrice > order.price() : levelPrice < order.price()) {
                     break;
                 }
             }

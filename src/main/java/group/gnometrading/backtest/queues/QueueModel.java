@@ -2,7 +2,6 @@ package group.gnometrading.backtest.queues;
 
 import group.gnometrading.backtest.book.LocalOrder;
 import group.gnometrading.backtest.book.LocalOrderFill;
-
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;

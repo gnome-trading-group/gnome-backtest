@@ -1,5 +1,7 @@
 package group.gnometrading.backtest;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import group.gnometrading.backtest.exchange.BacktestCancelOrder;
@@ -16,23 +18,18 @@ import group.gnometrading.schemas.OrderStatus;
 import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.TimeInForce;
-import org.junit.jupiter.api.DynamicTest;
-import org.junit.jupiter.api.TestFactory;
-
 import java.io.IOException;
-import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Stream;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.TestFactory;
 
 class GoldenFixtureTest {
 
@@ -45,33 +42,43 @@ class GoldenFixtureTest {
     record FixtureLevel(long bid_px, long bid_sz, long ask_px, long ask_sz) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record FixtureOrder(String side, long price, long size, String client_oid,
-                        String order_type, String tif) {}
+    record FixtureOrder(String side, long price, long size, String client_oid, String order_type, String tif) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record FixtureReport(String exec_type, String order_status, String client_oid,
-                         Long filled_qty, Long leaves_qty) {}
+    record FixtureReport(String exec_type, String order_status, String client_oid, Long filled_qty, Long leaves_qty) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record FixtureEvent(String type, FixtureOrder order, String side, Long price, Long size,
-                        String client_oid, List<FixtureReport> expected_reports) {}
+    record FixtureEvent(
+            String type,
+            FixtureOrder order,
+            String side,
+            Long price,
+            Long size,
+            String client_oid,
+            List<FixtureReport> expected_reports) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record Fixture(String name, String description,
-                   List<FixtureLevel> initial_levels, List<FixtureEvent> events) {}
+    record Fixture(String name, String description, List<FixtureLevel> initial_levels, List<FixtureEvent> events) {}
 
     // ---- Dummy models ----
 
     static class ZeroFeeModel implements FeeModel {
-        @Override public double calculateFee(double totalPrice, boolean isMaker) { return 0.0; }
+        @Override
+        public double calculateFee(double totalPrice, boolean isMaker) {
+            return 0.0;
+        }
     }
 
     static class ZeroLatency implements LatencyModel {
-        @Override public long simulate() { return 0; }
+        @Override
+        public long simulate() {
+            return 0;
+        }
     }
 
     static class PassthroughQueueModel implements QueueModel {
-        @Override public void onModify(long prev, long next, ArrayDeque<group.gnometrading.backtest.book.LocalOrder> q) {}
+        @Override
+        public void onModify(long prev, long next, ArrayDeque<group.gnometrading.backtest.book.LocalOrder> q) {}
     }
 
     // ---- Test discovery ----
@@ -86,8 +93,7 @@ class GoldenFixtureTest {
                 .filter(p -> p.toString().endsWith(".json"))
                 .sorted()
                 .map(path -> DynamicTest.dynamicTest(
-                        path.getFileName().toString().replace(".json", ""),
-                        () -> runFixture(path)));
+                        path.getFileName().toString().replace(".json", ""), () -> runFixture(path)));
     }
 
     private void runFixture(Path path) throws IOException {
@@ -121,8 +127,7 @@ class GoldenFixtureTest {
                     actual = exchange.onMarketData(trade);
                 }
                 case "market_update" -> {
-                    MBP10Schema update = buildAddSchema(
-                            event.order() != null ? List.of() : fixture.initial_levels());
+                    MBP10Schema update = buildAddSchema(event.order() != null ? List.of() : fixture.initial_levels());
                     actual = exchange.onMarketData(update);
                 }
                 default -> throw new IllegalArgumentException("Unknown event type: " + event.type());
@@ -132,10 +137,13 @@ class GoldenFixtureTest {
         }
     }
 
-    private void assertReports(String fixtureName, int eventIdx,
-                                List<FixtureReport> expected, List<BacktestExecutionReport> actual) {
-        assertEquals(expected.size(), actual.size(),
-                fixtureName + " event[" + eventIdx + "]: expected " + expected.size() + " reports but got " + actual.size());
+    private void assertReports(
+            String fixtureName, int eventIdx, List<FixtureReport> expected, List<BacktestExecutionReport> actual) {
+        assertEquals(
+                expected.size(),
+                actual.size(),
+                fixtureName + " event[" + eventIdx + "]: expected " + expected.size() + " reports but got "
+                        + actual.size());
 
         for (int j = 0; j < expected.size(); j++) {
             FixtureReport exp = expected.get(j);
@@ -206,8 +214,15 @@ class GoldenFixtureTest {
     // ---- Type converters ----
 
     private static BacktestOrder toOrder(FixtureOrder o) {
-        return new BacktestOrder(1, 1, o.client_oid(), toSide(o.side()), o.price(), o.size(),
-                toOrderType(o.order_type()), toTif(o.tif()));
+        return new BacktestOrder(
+                1,
+                1,
+                o.client_oid(),
+                toSide(o.side()),
+                o.price(),
+                o.size(),
+                toOrderType(o.order_type()),
+                toTif(o.tif()));
     }
 
     private static Side toSide(String s) {

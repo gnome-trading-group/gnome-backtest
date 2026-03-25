@@ -87,7 +87,8 @@ public final class MbpBook {
             if (bidLevel == null || !bidLevel.hasLocalOrders()) {
                 continue;
             }
-            long remainingToFill = bidLevel.localOrders.stream().mapToLong(lo -> lo.remaining).sum();
+            long remainingToFill =
+                    bidLevel.localOrders.stream().mapToLong(lo -> lo.remaining).sum();
             for (long askPrice : asks.keySet()) {
                 if (askPrice > bidPrice || remainingToFill == 0) {
                     break;
@@ -99,7 +100,8 @@ public final class MbpBook {
                 long tradeSize = Math.min(remainingToFill, askLevel.size);
                 List<LocalOrderFill> fills = queueModel.onTrade(tradeSize, bidLevel.localOrders);
                 allFills.addAll(fills);
-                long filledQty = fills.stream().mapToLong(LocalOrderFill::fillSize).sum();
+                long filledQty =
+                        fills.stream().mapToLong(LocalOrderFill::fillSize).sum();
                 remainingToFill -= filledQty;
                 askLevel.size -= filledQty;
             }
@@ -115,7 +117,8 @@ public final class MbpBook {
             if (askLevel == null || !askLevel.hasLocalOrders()) {
                 continue;
             }
-            long remainingToFill = askLevel.localOrders.stream().mapToLong(lo -> lo.remaining).sum();
+            long remainingToFill =
+                    askLevel.localOrders.stream().mapToLong(lo -> lo.remaining).sum();
             for (long bidPrice : bids.keySet()) {
                 if (bidPrice < askPrice || remainingToFill == 0) {
                     break;
@@ -127,7 +130,8 @@ public final class MbpBook {
                 long tradeSize = Math.min(remainingToFill, bidLevel.size);
                 List<LocalOrderFill> fills = queueModel.onTrade(tradeSize, askLevel.localOrders);
                 allFills.addAll(fills);
-                long filledQty = fills.stream().mapToLong(LocalOrderFill::fillSize).sum();
+                long filledQty =
+                        fills.stream().mapToLong(LocalOrderFill::fillSize).sum();
                 remainingToFill -= filledQty;
                 bidLevel.size -= filledQty;
             }

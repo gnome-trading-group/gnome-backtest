@@ -133,8 +133,8 @@ public final class BacktestDriver {
                 List<LocalMessage> messages = strategy.onMarketData(event.timestamp, schema);
                 for (LocalMessage message : messages) {
                     SimulatedExchange exchange = getExchangeForMessage(message);
-                    long deliveryTs = event.timestamp + strategy.simulateProcessingTime()
-                            + exchange.simulateNetworkLatency();
+                    long deliveryTs =
+                            event.timestamp + strategy.simulateProcessingTime() + exchange.simulateNetworkLatency();
                     queue.add(new BacktestEvent(deliveryTs, EventType.LOCAL_MESSAGE, message));
                 }
             }
@@ -152,7 +152,8 @@ public final class BacktestDriver {
                 }
 
                 for (BacktestExecutionReport report : reports) {
-                    long deliveryTs = event.timestamp + exchange.simulateOrderProcessingTime()
+                    long deliveryTs = event.timestamp
+                            + exchange.simulateOrderProcessingTime()
                             + exchange.simulateNetworkLatency();
                     report.timestampEvent = event.timestamp;
                     report.timestampRecv = deliveryTs;

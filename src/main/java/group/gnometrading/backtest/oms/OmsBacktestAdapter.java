@@ -112,9 +112,7 @@ public final class OmsBacktestAdapter {
             case REPLACE -> {
                 OmsReplaceOrder rep = action.replace();
                 buffer.add(new LocalMessage.CancelOrderMessage(new BacktestCancelOrder(
-                        rep.exchangeId(),
-                        (int) rep.securityId(),
-                        String.valueOf(rep.originalClientOid()))));
+                        rep.exchangeId(), (int) rep.securityId(), String.valueOf(rep.originalClientOid()))));
                 TrackedOrder tracked = oms.getOrder(rep.originalClientOid());
                 if (tracked != null) {
                     buffer.add(new LocalMessage.OrderMessage(new BacktestOrder(
@@ -131,9 +129,7 @@ public final class OmsBacktestAdapter {
             case CANCEL -> {
                 OmsCancelOrder cancel = action.cancel();
                 buffer.add(new LocalMessage.CancelOrderMessage(new BacktestCancelOrder(
-                        cancel.exchangeId(),
-                        (int) cancel.securityId(),
-                        String.valueOf(cancel.clientOid()))));
+                        cancel.exchangeId(), (int) cancel.securityId(), String.valueOf(cancel.clientOid()))));
             }
         }
     }

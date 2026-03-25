@@ -1,6 +1,7 @@
 package group.gnometrading.backtest.recorder;
 
 import group.gnometrading.backtest.exchange.BacktestExecutionReport;
+import group.gnometrading.oms.intent.Intent;
 import group.gnometrading.schemas.BBO1MSchema;
 import group.gnometrading.schemas.BBO1SSchema;
 import group.gnometrading.schemas.MBOSchema;
@@ -17,39 +18,56 @@ public final class BacktestRecorder {
 
     private static final int INITIAL_MARKET_CAPACITY = 1_000_000;
     private static final int INITIAL_EXEC_CAPACITY = 10_000;
+    private static final int INITIAL_INTENT_CAPACITY = 1_000_000;
 
     // Market record columnar arrays
     private int marketCount = 0;
     private long[] marketTimestamp;
-    private int[]  marketExchangeId;
+    private int[] marketExchangeId;
     private long[] marketSecurityId;
     private long[] marketBestBidPrice;
     private long[] marketBestAskPrice;
     private long[] marketBestBidSize;
     private long[] marketBestAskSize;
+    private long[] marketMidPrice;
+    private long[] marketSpread;
     private long[] marketLastTradePrice;
     private long[] marketLastTradeSize;
-    private long[] marketSequenceNumber;
 
     // Execution record columnar arrays
     private int execCount = 0;
-    private long[]   execTimestampEvent;
-    private long[]   execTimestampRecv;
-    private int[]    execExchangeId;
-    private int[]    execSecurityId;
+    private long[] execTimestampEvent;
+    private long[] execTimestampRecv;
+    private int[] execExchangeId;
+    private int[] execSecurityId;
+    private int[] execStrategyId;
     private String[] execClientOid;
     private String[] execSide;
     private String[] execExecType;
-    private String[] execOrderStatus;
-    private long[]   execFilledQty;
-    private long[]   execFillPrice;
-    private long[]   execCumulativeQty;
-    private long[]   execLeavesQty;
+    private long[] execFilledQty;
+    private long[] execFillPrice;
+    private long[] execOrderPrice;
+    private long[] execOrderSize;
     private double[] execFee;
+
+    // Intent record columnar arrays
+    private int intentCount = 0;
+    private long[] intentTimestamp;
+    private int[] intentExchangeId;
+    private long[] intentSecurityId;
+    private int[] intentStrategyId;
+    private long[] intentBidPrice;
+    private long[] intentBidSize;
+    private long[] intentAskPrice;
+    private long[] intentAskSize;
+    private String[] intentTakeSide;
+    private long[] intentTakeSize;
+    private long[] intentTakeLimitPrice;
 
     public BacktestRecorder() {
         allocateMarketArrays(INITIAL_MARKET_CAPACITY);
         allocateExecArrays(INITIAL_EXEC_CAPACITY);
+        allocateIntentArrays(INITIAL_INTENT_CAPACITY);
     }
 
     // --- Market data recording ---
@@ -76,7 +94,8 @@ public final class BacktestRecorder {
 
     // --- Execution report recording ---
 
-    public void onExecutionReport(long timestamp, BacktestExecutionReport report) {
+    public void onExecutionReport(long timestamp, BacktestExecutionReport report,
+                                  int strategyId, long orderPrice, long orderSize) {
         if (execCount == execTimestampEvent.length) {
             growExecArrays();
         }
@@ -85,15 +104,35 @@ public final class BacktestRecorder {
         execTimestampRecv[idx] = report.timestampRecv;
         execExchangeId[idx] = report.exchangeId;
         execSecurityId[idx] = report.securityId;
+        execStrategyId[idx] = strategyId;
         execClientOid[idx] = report.clientOid;
         execSide[idx] = report.side.name();
         execExecType[idx] = report.execType.name();
-        execOrderStatus[idx] = report.orderStatus.name();
         execFilledQty[idx] = report.filledQty;
         execFillPrice[idx] = report.fillPrice;
-        execCumulativeQty[idx] = report.cumulativeQty;
-        execLeavesQty[idx] = report.leavesQty;
+        execOrderPrice[idx] = orderPrice;
+        execOrderSize[idx] = orderSize;
         execFee[idx] = report.fee;
+    }
+
+    // --- Intent recording ---
+
+    public void onIntent(long timestamp, Intent intent) {
+        if (intentCount == intentTimestamp.length) {
+            growIntentArrays();
+        }
+        int idx = intentCount++;
+        intentTimestamp[idx] = timestamp;
+        intentExchangeId[idx] = intent.getExchangeId();
+        intentSecurityId[idx] = intent.getSecurityId();
+        intentStrategyId[idx] = intent.getStrategyId();
+        intentBidPrice[idx] = intent.getBidPrice();
+        intentBidSize[idx] = intent.getBidSize();
+        intentAskPrice[idx] = intent.getAskPrice();
+        intentAskSize[idx] = intent.getAskSize();
+        intentTakeSide[idx] = intent.hasTake() ? intent.getTakeSide().name() : null;
+        intentTakeSize[idx] = intent.getTakeSize();
+        intentTakeLimitPrice[idx] = intent.getTakeLimitPrice();
     }
 
     // --- Counts ---
@@ -104,6 +143,10 @@ public final class BacktestRecorder {
 
     public int getExecutionRecordCount() {
         return execCount;
+    }
+
+    public int getIntentRecordCount() {
+        return intentCount;
     }
 
     // --- Market array getters ---
@@ -136,16 +179,20 @@ public final class BacktestRecorder {
         return marketBestAskSize;
     }
 
+    public long[] getMarketMidPrices() {
+        return marketMidPrice;
+    }
+
+    public long[] getMarketSpreads() {
+        return marketSpread;
+    }
+
     public long[] getMarketLastTradePrices() {
         return marketLastTradePrice;
     }
 
     public long[] getMarketLastTradeSizes() {
         return marketLastTradeSize;
-    }
-
-    public long[] getMarketSequenceNumbers() {
-        return marketSequenceNumber;
     }
 
     // --- Execution array getters ---
@@ -166,6 +213,10 @@ public final class BacktestRecorder {
         return execSecurityId;
     }
 
+    public int[] getExecStrategyIds() {
+        return execStrategyId;
+    }
+
     public String[] getExecClientOids() {
         return execClientOid;
     }
@@ -178,10 +229,6 @@ public final class BacktestRecorder {
         return execExecType;
     }
 
-    public String[] getExecOrderStatuses() {
-        return execOrderStatus;
-    }
-
     public long[] getExecFilledQtys() {
         return execFilledQty;
     }
@@ -190,16 +237,62 @@ public final class BacktestRecorder {
         return execFillPrice;
     }
 
-    public long[] getExecCumulativeQtys() {
-        return execCumulativeQty;
+    public long[] getExecOrderPrices() {
+        return execOrderPrice;
     }
 
-    public long[] getExecLeavesQtys() {
-        return execLeavesQty;
+    public long[] getExecOrderSizes() {
+        return execOrderSize;
     }
 
     public double[] getExecFees() {
         return execFee;
+    }
+
+    // --- Intent array getters ---
+
+    public long[] getIntentTimestamps() {
+        return intentTimestamp;
+    }
+
+    public int[] getIntentExchangeIds() {
+        return intentExchangeId;
+    }
+
+    public long[] getIntentSecurityIds() {
+        return intentSecurityId;
+    }
+
+    public int[] getIntentStrategyIds() {
+        return intentStrategyId;
+    }
+
+    public long[] getIntentBidPrices() {
+        return intentBidPrice;
+    }
+
+    public long[] getIntentBidSizes() {
+        return intentBidSize;
+    }
+
+    public long[] getIntentAskPrices() {
+        return intentAskPrice;
+    }
+
+    public long[] getIntentAskSizes() {
+        return intentAskSize;
+    }
+
+    public String[] getIntentTakeSides() {
+        return intentTakeSide;
+    }
+
+    public long[] getIntentTakeSizes() {
+        return intentTakeSize;
+    }
+
+    public long[] getIntentTakeLimitPrices() {
+        return intentTakeLimitPrice;
     }
 
     // --- Clear ---
@@ -207,6 +300,7 @@ public final class BacktestRecorder {
     public void clear() {
         marketCount = 0;
         execCount = 0;
+        intentCount = 0;
     }
 
     // --- Allocation and growth ---
@@ -219,9 +313,10 @@ public final class BacktestRecorder {
         marketBestAskPrice = new long[capacity];
         marketBestBidSize = new long[capacity];
         marketBestAskSize = new long[capacity];
+        marketMidPrice = new long[capacity];
+        marketSpread = new long[capacity];
         marketLastTradePrice = new long[capacity];
         marketLastTradeSize = new long[capacity];
-        marketSequenceNumber = new long[capacity];
     }
 
     private void allocateExecArrays(int capacity) {
@@ -229,15 +324,29 @@ public final class BacktestRecorder {
         execTimestampRecv = new long[capacity];
         execExchangeId = new int[capacity];
         execSecurityId = new int[capacity];
+        execStrategyId = new int[capacity];
         execClientOid = new String[capacity];
         execSide = new String[capacity];
         execExecType = new String[capacity];
-        execOrderStatus = new String[capacity];
         execFilledQty = new long[capacity];
         execFillPrice = new long[capacity];
-        execCumulativeQty = new long[capacity];
-        execLeavesQty = new long[capacity];
+        execOrderPrice = new long[capacity];
+        execOrderSize = new long[capacity];
         execFee = new double[capacity];
+    }
+
+    private void allocateIntentArrays(int capacity) {
+        intentTimestamp = new long[capacity];
+        intentExchangeId = new int[capacity];
+        intentSecurityId = new long[capacity];
+        intentStrategyId = new int[capacity];
+        intentBidPrice = new long[capacity];
+        intentBidSize = new long[capacity];
+        intentAskPrice = new long[capacity];
+        intentAskSize = new long[capacity];
+        intentTakeSide = new String[capacity];
+        intentTakeSize = new long[capacity];
+        intentTakeLimitPrice = new long[capacity];
     }
 
     private void growMarketArrays() {
@@ -249,9 +358,10 @@ public final class BacktestRecorder {
         marketBestAskPrice = Arrays.copyOf(marketBestAskPrice, newCap);
         marketBestBidSize = Arrays.copyOf(marketBestBidSize, newCap);
         marketBestAskSize = Arrays.copyOf(marketBestAskSize, newCap);
+        marketMidPrice = Arrays.copyOf(marketMidPrice, newCap);
+        marketSpread = Arrays.copyOf(marketSpread, newCap);
         marketLastTradePrice = Arrays.copyOf(marketLastTradePrice, newCap);
         marketLastTradeSize = Arrays.copyOf(marketLastTradeSize, newCap);
-        marketSequenceNumber = Arrays.copyOf(marketSequenceNumber, newCap);
     }
 
     private void growExecArrays() {
@@ -260,69 +370,75 @@ public final class BacktestRecorder {
         execTimestampRecv = Arrays.copyOf(execTimestampRecv, newCap);
         execExchangeId = Arrays.copyOf(execExchangeId, newCap);
         execSecurityId = Arrays.copyOf(execSecurityId, newCap);
+        execStrategyId = Arrays.copyOf(execStrategyId, newCap);
         execClientOid = Arrays.copyOf(execClientOid, newCap);
         execSide = Arrays.copyOf(execSide, newCap);
         execExecType = Arrays.copyOf(execExecType, newCap);
-        execOrderStatus = Arrays.copyOf(execOrderStatus, newCap);
         execFilledQty = Arrays.copyOf(execFilledQty, newCap);
         execFillPrice = Arrays.copyOf(execFillPrice, newCap);
-        execCumulativeQty = Arrays.copyOf(execCumulativeQty, newCap);
-        execLeavesQty = Arrays.copyOf(execLeavesQty, newCap);
+        execOrderPrice = Arrays.copyOf(execOrderPrice, newCap);
+        execOrderSize = Arrays.copyOf(execOrderSize, newCap);
         execFee = Arrays.copyOf(execFee, newCap);
     }
 
-    // --- Schema-specific field extraction (inline, no object creation) ---
+    private void growIntentArrays() {
+        int newCap = intentTimestamp.length * 2;
+        intentTimestamp = Arrays.copyOf(intentTimestamp, newCap);
+        intentExchangeId = Arrays.copyOf(intentExchangeId, newCap);
+        intentSecurityId = Arrays.copyOf(intentSecurityId, newCap);
+        intentStrategyId = Arrays.copyOf(intentStrategyId, newCap);
+        intentBidPrice = Arrays.copyOf(intentBidPrice, newCap);
+        intentBidSize = Arrays.copyOf(intentBidSize, newCap);
+        intentAskPrice = Arrays.copyOf(intentAskPrice, newCap);
+        intentAskSize = Arrays.copyOf(intentAskSize, newCap);
+        intentTakeSide = Arrays.copyOf(intentTakeSide, newCap);
+        intentTakeSize = Arrays.copyOf(intentTakeSize, newCap);
+        intentTakeLimitPrice = Arrays.copyOf(intentTakeLimitPrice, newCap);
+    }
+
+    // --- Schema-specific field extraction ---
+
+    private void writeBookFields(int idx, int exchangeId, long securityId,
+                                 long bidPrice, long askPrice, long bidSize, long askSize,
+                                 long tradePrice, long tradeSize) {
+        marketExchangeId[idx] = exchangeId;
+        marketSecurityId[idx] = securityId;
+        marketBestBidPrice[idx] = bidPrice;
+        marketBestAskPrice[idx] = askPrice;
+        marketBestBidSize[idx] = bidSize;
+        marketBestAskSize[idx] = askSize;
+        marketMidPrice[idx] = (bidPrice > 0 && askPrice > 0) ? (bidPrice + askPrice) / 2 : 0;
+        marketSpread[idx] = (bidPrice > 0 && askPrice > 0) ? askPrice - bidPrice : 0;
+        marketLastTradePrice[idx] = tradePrice;
+        marketLastTradeSize[idx] = tradeSize;
+    }
 
     private void writeMbp10(int idx, MBP10Schema schema) {
         var decoder = schema.decoder;
-        marketExchangeId[idx] = decoder.exchangeId();
-        marketSecurityId[idx] = decoder.securityId();
-        marketBestBidPrice[idx] = decoder.bidPrice0();
-        marketBestAskPrice[idx] = decoder.askPrice0();
-        marketBestBidSize[idx] = decoder.bidSize0();
-        marketBestAskSize[idx] = decoder.askSize0();
-        marketLastTradePrice[idx] = decoder.price();
-        marketLastTradeSize[idx] = decoder.size();
-        marketSequenceNumber[idx] = decoder.sequence();
+        writeBookFields(idx, decoder.exchangeId(), decoder.securityId(),
+                decoder.bidPrice0(), decoder.askPrice0(), decoder.bidSize0(), decoder.askSize0(),
+                decoder.price(), decoder.size());
     }
 
     private void writeMbp1(int idx, MBP1Schema schema) {
         var decoder = schema.decoder;
-        marketExchangeId[idx] = decoder.exchangeId();
-        marketSecurityId[idx] = decoder.securityId();
-        marketBestBidPrice[idx] = decoder.bidPrice0();
-        marketBestAskPrice[idx] = decoder.askPrice0();
-        marketBestBidSize[idx] = decoder.bidSize0();
-        marketBestAskSize[idx] = decoder.askSize0();
-        marketLastTradePrice[idx] = decoder.price();
-        marketLastTradeSize[idx] = decoder.size();
-        marketSequenceNumber[idx] = decoder.sequence();
+        writeBookFields(idx, decoder.exchangeId(), decoder.securityId(),
+                decoder.bidPrice0(), decoder.askPrice0(), decoder.bidSize0(), decoder.askSize0(),
+                decoder.price(), decoder.size());
     }
 
     private void writeBbo1S(int idx, BBO1SSchema schema) {
         var decoder = schema.decoder;
-        marketExchangeId[idx] = decoder.exchangeId();
-        marketSecurityId[idx] = decoder.securityId();
-        marketBestBidPrice[idx] = decoder.bidPrice0();
-        marketBestAskPrice[idx] = decoder.askPrice0();
-        marketBestBidSize[idx] = decoder.bidSize0();
-        marketBestAskSize[idx] = decoder.askSize0();
-        marketLastTradePrice[idx] = decoder.price();
-        marketLastTradeSize[idx] = decoder.size();
-        marketSequenceNumber[idx] = decoder.sequence();
+        writeBookFields(idx, decoder.exchangeId(), decoder.securityId(),
+                decoder.bidPrice0(), decoder.askPrice0(), decoder.bidSize0(), decoder.askSize0(),
+                decoder.price(), decoder.size());
     }
 
     private void writeBbo1M(int idx, BBO1MSchema schema) {
         var decoder = schema.decoder;
-        marketExchangeId[idx] = decoder.exchangeId();
-        marketSecurityId[idx] = decoder.securityId();
-        marketBestBidPrice[idx] = decoder.bidPrice0();
-        marketBestAskPrice[idx] = decoder.askPrice0();
-        marketBestBidSize[idx] = decoder.bidSize0();
-        marketBestAskSize[idx] = decoder.askSize0();
-        marketLastTradePrice[idx] = decoder.price();
-        marketLastTradeSize[idx] = decoder.size();
-        marketSequenceNumber[idx] = decoder.sequence();
+        writeBookFields(idx, decoder.exchangeId(), decoder.securityId(),
+                decoder.bidPrice0(), decoder.askPrice0(), decoder.bidSize0(), decoder.askSize0(),
+                decoder.price(), decoder.size());
     }
 
     private void writeTrades(int idx, TradesSchema schema) {
@@ -331,7 +447,6 @@ public final class BacktestRecorder {
         marketSecurityId[idx] = decoder.securityId();
         marketLastTradePrice[idx] = decoder.price();
         marketLastTradeSize[idx] = decoder.size();
-        marketSequenceNumber[idx] = decoder.sequence();
     }
 
     private void writeMbo(int idx, MBOSchema schema) {
@@ -340,33 +455,38 @@ public final class BacktestRecorder {
         marketSecurityId[idx] = decoder.securityId();
         marketLastTradePrice[idx] = decoder.price();
         marketLastTradeSize[idx] = decoder.size();
-        marketSequenceNumber[idx] = decoder.sequence();
     }
 
     private void writeOhlcv1S(int idx, OHLCV1SSchema schema) {
         var decoder = schema.decoder;
+        long close = decoder.close();
         marketExchangeId[idx] = decoder.exchangeId();
         marketSecurityId[idx] = decoder.securityId();
-        marketBestBidPrice[idx] = decoder.close();
-        marketBestAskPrice[idx] = decoder.close();
-        marketLastTradePrice[idx] = decoder.close();
+        marketBestBidPrice[idx] = close;
+        marketBestAskPrice[idx] = close;
+        marketMidPrice[idx] = close;
+        marketLastTradePrice[idx] = close;
     }
 
     private void writeOhlcv1M(int idx, OHLCV1MSchema schema) {
         var decoder = schema.decoder;
+        long close = decoder.close();
         marketExchangeId[idx] = decoder.exchangeId();
         marketSecurityId[idx] = decoder.securityId();
-        marketBestBidPrice[idx] = decoder.close();
-        marketBestAskPrice[idx] = decoder.close();
-        marketLastTradePrice[idx] = decoder.close();
+        marketBestBidPrice[idx] = close;
+        marketBestAskPrice[idx] = close;
+        marketMidPrice[idx] = close;
+        marketLastTradePrice[idx] = close;
     }
 
     private void writeOhlcv1H(int idx, OHLCV1HSchema schema) {
         var decoder = schema.decoder;
+        long close = decoder.close();
         marketExchangeId[idx] = decoder.exchangeId();
         marketSecurityId[idx] = decoder.securityId();
-        marketBestBidPrice[idx] = decoder.close();
-        marketBestAskPrice[idx] = decoder.close();
-        marketLastTradePrice[idx] = decoder.close();
+        marketBestBidPrice[idx] = close;
+        marketBestAskPrice[idx] = close;
+        marketMidPrice[idx] = close;
+        marketLastTradePrice[idx] = close;
     }
 }

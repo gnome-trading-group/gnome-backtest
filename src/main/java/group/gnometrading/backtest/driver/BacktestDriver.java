@@ -123,9 +123,6 @@ public final class BacktestDriver {
             }
             case EXCHANGE_MESSAGE -> {
                 BacktestExecutionReport report = (BacktestExecutionReport) event.data;
-                if (recorder != null) {
-                    recorder.onExecutionReport(event.timestamp, report);
-                }
                 strategy.onExecutionReport(event.timestamp, report);
             }
             case LOCAL_MARKET_DATA -> {

@@ -145,15 +145,19 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         long fillPrice = localOrder.order.price();
         long cumulativeQty = localOrder.order.size() - localOrder.remaining;
 
-        return new BacktestExecutionReport(
+        var report = new BacktestExecutionReport(
                 localOrder.order.clientOid(),
-                ExecType.FILL,
+                localOrder.remaining == 0 ? ExecType.FILL : ExecType.PARTIAL_FILL,
                 localOrder.remaining == 0 ? OrderStatus.FILLED : OrderStatus.PARTIALLY_FILLED,
                 filledQty,
                 fillPrice,
                 cumulativeQty,
                 localOrder.remaining,
                 fee);
+        report.exchangeId = localOrder.order.exchangeId();
+        report.securityId = localOrder.order.securityId();
+        report.side = localOrder.order.side();
+        return report;
     }
 
     private List<BacktestExecutionReport> handleMarketOrder(BacktestOrder order) {

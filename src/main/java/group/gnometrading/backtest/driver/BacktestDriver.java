@@ -118,6 +118,8 @@ public final class BacktestDriver {
                 List<BacktestExecutionReport> reports = exchange.onMarketData(schema);
                 for (BacktestExecutionReport report : reports) {
                     long deliveryTs = event.timestamp + exchange.simulateNetworkLatency();
+                    report.timestampEvent = event.timestamp;
+                    report.timestampRecv = deliveryTs;
                     queue.add(new BacktestEvent(deliveryTs, EventType.EXCHANGE_MESSAGE, report));
                 }
             }

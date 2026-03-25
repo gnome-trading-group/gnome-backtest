@@ -288,6 +288,9 @@ public final class MbpBook {
         allPrices.addAll(curr.keySet());
 
         for (long price : allPrices) {
+            if (price == PRICE_NULL) {
+                continue;
+            }
             OrderBookLevel prevLevel = book.get(price);
             long prevSize = prevLevel != null ? prevLevel.size : 0;
             long newSize = curr.getOrDefault(price, 0L);

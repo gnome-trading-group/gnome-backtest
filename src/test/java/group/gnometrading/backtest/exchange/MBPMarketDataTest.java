@@ -1,5 +1,7 @@
 package group.gnometrading.backtest.exchange;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import group.gnometrading.backtest.fee.FeeModel;
 import group.gnometrading.backtest.latency.LatencyModel;
 import group.gnometrading.backtest.queues.QueueModel;
@@ -10,13 +12,10 @@ import group.gnometrading.schemas.OrderStatus;
 import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.TimeInForce;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
 import java.util.ArrayDeque;
 import java.util.List;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 class MBPMarketDataTest {
 
@@ -37,21 +36,30 @@ class MBPMarketDataTest {
 
     static class ZeroLatency implements LatencyModel {
         @Override
-        public long simulate() { return 0; }
+        public long simulate() {
+            return 0;
+        }
     }
 
     MbpSimulatedExchange exchange;
 
     @BeforeEach
     void setUp() {
-        exchange = new MbpSimulatedExchange(new DummyFeeModel(), new ZeroLatency(), new ZeroLatency(), new DummyQueueModel());
+        exchange = new MbpSimulatedExchange(
+                new DummyFeeModel(), new ZeroLatency(), new ZeroLatency(), new DummyQueueModel());
     }
 
     /** Creates an MBP10 market update with up to two bid/ask levels. */
     static MBP10Schema makeMarketUpdate(
             Action action,
-            long bidPx0, long bidSz0, long askPx0, long askSz0,
-            long bidPx1, long bidSz1, long askPx1, long askSz1) {
+            long bidPx0,
+            long bidSz0,
+            long askPx0,
+            long askSz0,
+            long bidPx1,
+            long bidSz1,
+            long askPx1,
+            long askSz1) {
         MBP10Schema schema = new MBP10Schema();
         schema.encoder.action(action);
         schema.encoder.side(Side.None);
@@ -66,20 +74,51 @@ class MBPMarketDataTest {
         schema.encoder.askPrice1(askPx1);
         schema.encoder.askSize1(askSz1 == -1 ? SIZE_NULL : askSz1);
         // Fill remaining levels with null
-        schema.encoder.bidPrice2(PRICE_NULL).bidSize2(SIZE_NULL).askPrice2(PRICE_NULL).askSize2(SIZE_NULL);
-        schema.encoder.bidPrice3(PRICE_NULL).bidSize3(SIZE_NULL).askPrice3(PRICE_NULL).askSize3(SIZE_NULL);
-        schema.encoder.bidPrice4(PRICE_NULL).bidSize4(SIZE_NULL).askPrice4(PRICE_NULL).askSize4(SIZE_NULL);
-        schema.encoder.bidPrice5(PRICE_NULL).bidSize5(SIZE_NULL).askPrice5(PRICE_NULL).askSize5(SIZE_NULL);
-        schema.encoder.bidPrice6(PRICE_NULL).bidSize6(SIZE_NULL).askPrice6(PRICE_NULL).askSize6(SIZE_NULL);
-        schema.encoder.bidPrice7(PRICE_NULL).bidSize7(SIZE_NULL).askPrice7(PRICE_NULL).askSize7(SIZE_NULL);
-        schema.encoder.bidPrice8(PRICE_NULL).bidSize8(SIZE_NULL).askPrice8(PRICE_NULL).askSize8(SIZE_NULL);
-        schema.encoder.bidPrice9(PRICE_NULL).bidSize9(SIZE_NULL).askPrice9(PRICE_NULL).askSize9(SIZE_NULL);
+        schema.encoder
+                .bidPrice2(PRICE_NULL)
+                .bidSize2(SIZE_NULL)
+                .askPrice2(PRICE_NULL)
+                .askSize2(SIZE_NULL);
+        schema.encoder
+                .bidPrice3(PRICE_NULL)
+                .bidSize3(SIZE_NULL)
+                .askPrice3(PRICE_NULL)
+                .askSize3(SIZE_NULL);
+        schema.encoder
+                .bidPrice4(PRICE_NULL)
+                .bidSize4(SIZE_NULL)
+                .askPrice4(PRICE_NULL)
+                .askSize4(SIZE_NULL);
+        schema.encoder
+                .bidPrice5(PRICE_NULL)
+                .bidSize5(SIZE_NULL)
+                .askPrice5(PRICE_NULL)
+                .askSize5(SIZE_NULL);
+        schema.encoder
+                .bidPrice6(PRICE_NULL)
+                .bidSize6(SIZE_NULL)
+                .askPrice6(PRICE_NULL)
+                .askSize6(SIZE_NULL);
+        schema.encoder
+                .bidPrice7(PRICE_NULL)
+                .bidSize7(SIZE_NULL)
+                .askPrice7(PRICE_NULL)
+                .askSize7(SIZE_NULL);
+        schema.encoder
+                .bidPrice8(PRICE_NULL)
+                .bidSize8(SIZE_NULL)
+                .askPrice8(PRICE_NULL)
+                .askSize8(SIZE_NULL);
+        schema.encoder
+                .bidPrice9(PRICE_NULL)
+                .bidSize9(SIZE_NULL)
+                .askPrice9(PRICE_NULL)
+                .askSize9(SIZE_NULL);
         return schema;
     }
 
     static MBP10Schema makeSingleLevelUpdate(long bidPx, long bidSz, long askPx, long askSz) {
-        return makeMarketUpdate(Action.Add, bidPx, bidSz, askPx, askSz,
-                PRICE_NULL, -1, PRICE_NULL, -1);
+        return makeMarketUpdate(Action.Add, bidPx, bidSz, askPx, askSz, PRICE_NULL, -1, PRICE_NULL, -1);
     }
 
     static MBP10Schema makeTrade(Side side, long price, long size) {
@@ -88,21 +127,61 @@ class MBPMarketDataTest {
         schema.encoder.side(side);
         schema.encoder.price(price);
         schema.encoder.size(size);
-        schema.encoder.bidPrice0(PRICE_NULL).bidSize0(SIZE_NULL).askPrice0(PRICE_NULL).askSize0(SIZE_NULL);
-        schema.encoder.bidPrice1(PRICE_NULL).bidSize1(SIZE_NULL).askPrice1(PRICE_NULL).askSize1(SIZE_NULL);
-        schema.encoder.bidPrice2(PRICE_NULL).bidSize2(SIZE_NULL).askPrice2(PRICE_NULL).askSize2(SIZE_NULL);
-        schema.encoder.bidPrice3(PRICE_NULL).bidSize3(SIZE_NULL).askPrice3(PRICE_NULL).askSize3(SIZE_NULL);
-        schema.encoder.bidPrice4(PRICE_NULL).bidSize4(SIZE_NULL).askPrice4(PRICE_NULL).askSize4(SIZE_NULL);
-        schema.encoder.bidPrice5(PRICE_NULL).bidSize5(SIZE_NULL).askPrice5(PRICE_NULL).askSize5(SIZE_NULL);
-        schema.encoder.bidPrice6(PRICE_NULL).bidSize6(SIZE_NULL).askPrice6(PRICE_NULL).askSize6(SIZE_NULL);
-        schema.encoder.bidPrice7(PRICE_NULL).bidSize7(SIZE_NULL).askPrice7(PRICE_NULL).askSize7(SIZE_NULL);
-        schema.encoder.bidPrice8(PRICE_NULL).bidSize8(SIZE_NULL).askPrice8(PRICE_NULL).askSize8(SIZE_NULL);
-        schema.encoder.bidPrice9(PRICE_NULL).bidSize9(SIZE_NULL).askPrice9(PRICE_NULL).askSize9(SIZE_NULL);
+        schema.encoder
+                .bidPrice0(PRICE_NULL)
+                .bidSize0(SIZE_NULL)
+                .askPrice0(PRICE_NULL)
+                .askSize0(SIZE_NULL);
+        schema.encoder
+                .bidPrice1(PRICE_NULL)
+                .bidSize1(SIZE_NULL)
+                .askPrice1(PRICE_NULL)
+                .askSize1(SIZE_NULL);
+        schema.encoder
+                .bidPrice2(PRICE_NULL)
+                .bidSize2(SIZE_NULL)
+                .askPrice2(PRICE_NULL)
+                .askSize2(SIZE_NULL);
+        schema.encoder
+                .bidPrice3(PRICE_NULL)
+                .bidSize3(SIZE_NULL)
+                .askPrice3(PRICE_NULL)
+                .askSize3(SIZE_NULL);
+        schema.encoder
+                .bidPrice4(PRICE_NULL)
+                .bidSize4(SIZE_NULL)
+                .askPrice4(PRICE_NULL)
+                .askSize4(SIZE_NULL);
+        schema.encoder
+                .bidPrice5(PRICE_NULL)
+                .bidSize5(SIZE_NULL)
+                .askPrice5(PRICE_NULL)
+                .askSize5(SIZE_NULL);
+        schema.encoder
+                .bidPrice6(PRICE_NULL)
+                .bidSize6(SIZE_NULL)
+                .askPrice6(PRICE_NULL)
+                .askSize6(SIZE_NULL);
+        schema.encoder
+                .bidPrice7(PRICE_NULL)
+                .bidSize7(SIZE_NULL)
+                .askPrice7(PRICE_NULL)
+                .askSize7(SIZE_NULL);
+        schema.encoder
+                .bidPrice8(PRICE_NULL)
+                .bidSize8(SIZE_NULL)
+                .askPrice8(PRICE_NULL)
+                .askSize8(SIZE_NULL);
+        schema.encoder
+                .bidPrice9(PRICE_NULL)
+                .bidSize9(SIZE_NULL)
+                .askPrice9(PRICE_NULL)
+                .askSize9(SIZE_NULL);
         return schema;
     }
 
-    static BacktestOrder makeOrder(long price, long size, Side side, String clientOid,
-                                   OrderType orderType, TimeInForce tif) {
+    static BacktestOrder makeOrder(
+            long price, long size, Side side, String clientOid, OrderType orderType, TimeInForce tif) {
         return new BacktestOrder(1, 1, clientOid, side, price, size, orderType, tif);
     }
 

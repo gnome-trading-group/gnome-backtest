@@ -12,5 +12,4 @@ public record BacktestOrder(
         long price,
         long size,
         OrderType orderType,
-        TimeInForce timeInForce
-) {}
+        TimeInForce timeInForce) {}

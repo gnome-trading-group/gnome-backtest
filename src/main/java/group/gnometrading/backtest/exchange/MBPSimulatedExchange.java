@@ -56,8 +56,15 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
     @Override
     public List<BacktestExecutionReport> submitOrder(BacktestOrder order) {
         BacktestOrder resolvedOrder = order.clientOid() == null
-                ? new BacktestOrder(order.exchangeId(), order.securityId(), generateClientOid(),
-                        order.side(), order.price(), order.size(), order.orderType(), order.timeInForce())
+                ? new BacktestOrder(
+                        order.exchangeId(),
+                        order.securityId(),
+                        generateClientOid(),
+                        order.side(),
+                        order.price(),
+                        order.size(),
+                        order.orderType(),
+                        order.timeInForce())
                 : order;
 
         if (resolvedOrder.orderType() == OrderType.MARKET) {
@@ -138,16 +145,19 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         long fillPrice = localOrder.order.price();
         long cumulativeQty = localOrder.order.size() - localOrder.remaining;
 
-        return new BacktestExecutionReport(
+        var report = new BacktestExecutionReport(
                 localOrder.order.clientOid(),
-                ExecType.FILL,
+                localOrder.remaining == 0 ? ExecType.FILL : ExecType.PARTIAL_FILL,
                 localOrder.remaining == 0 ? OrderStatus.FILLED : OrderStatus.PARTIALLY_FILLED,
                 filledQty,
                 fillPrice,
                 cumulativeQty,
                 localOrder.remaining,
-                fee
-        );
+                fee);
+        report.exchangeId = localOrder.order.exchangeId();
+        report.securityId = localOrder.order.securityId();
+        report.side = localOrder.order.side();
+        return report;
     }
 
     private List<BacktestExecutionReport> handleMarketOrder(BacktestOrder order) {
@@ -168,13 +178,17 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
 
         if (totalFilled == order.size()) {
             return List.of(new BacktestExecutionReport(
-                    order.clientOid(), ExecType.FILL, OrderStatus.FILLED,
-                    totalFilled, vwapPrice, totalFilled, 0, fee));
+                    order.clientOid(), ExecType.FILL, OrderStatus.FILLED, totalFilled, vwapPrice, totalFilled, 0, fee));
         } else {
             return List.of(new BacktestExecutionReport(
-                    order.clientOid(), ExecType.PARTIAL_FILL, OrderStatus.PARTIALLY_FILLED,
-                    totalFilled, vwapPrice,
-                    totalFilled, order.size() - totalFilled, fee));
+                    order.clientOid(),
+                    ExecType.PARTIAL_FILL,
+                    OrderStatus.PARTIALLY_FILLED,
+                    totalFilled,
+                    vwapPrice,
+                    totalFilled,
+                    order.size() - totalFilled,
+                    fee));
         }
     }
 
@@ -195,21 +209,41 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
 
             if (totalFilled == order.size()) {
                 return List.of(new BacktestExecutionReport(
-                        order.clientOid(), ExecType.FILL, OrderStatus.FILLED,
-                        totalFilled, vwapPrice, totalFilled, 0, fee));
+                        order.clientOid(),
+                        ExecType.FILL,
+                        OrderStatus.FILLED,
+                        totalFilled,
+                        vwapPrice,
+                        totalFilled,
+                        0,
+                        fee));
             }
 
             // Partial immediate fill
             BacktestExecutionReport partialFill = new BacktestExecutionReport(
-                    order.clientOid(), ExecType.PARTIAL_FILL, OrderStatus.PARTIALLY_FILLED,
-                    totalFilled, vwapPrice, totalFilled, order.size() - totalFilled, fee);
+                    order.clientOid(),
+                    ExecType.PARTIAL_FILL,
+                    OrderStatus.PARTIALLY_FILLED,
+                    totalFilled,
+                    vwapPrice,
+                    totalFilled,
+                    order.size() - totalFilled,
+                    fee);
 
             if (order.timeInForce() == TimeInForce.FILL_OR_KILL) {
                 return List.of(BacktestExecutionReport.rejected(order.clientOid()));
             } else if (order.timeInForce() == TimeInForce.IMMEDIATE_OR_CANCELED) {
-                return List.of(partialFill, new BacktestExecutionReport(
-                        order.clientOid(), ExecType.CANCEL, OrderStatus.PARTIALLY_FILLED,
-                        0, 0, totalFilled, 0, fee));
+                return List.of(
+                        partialFill,
+                        new BacktestExecutionReport(
+                                order.clientOid(),
+                                ExecType.CANCEL,
+                                OrderStatus.PARTIALLY_FILLED,
+                                0,
+                                0,
+                                totalFilled,
+                                0,
+                                fee));
             } else {
                 long remaining = order.size() - totalFilled;
                 orderBook.addLocalOrder(order, remaining);

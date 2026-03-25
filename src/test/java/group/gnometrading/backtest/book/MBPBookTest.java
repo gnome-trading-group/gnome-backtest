@@ -1,17 +1,16 @@
 package group.gnometrading.backtest.book;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import group.gnometrading.backtest.exchange.BacktestOrder;
 import group.gnometrading.backtest.queues.QueueModel;
 import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.TimeInForce;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
 import java.util.ArrayDeque;
 import java.util.List;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 class MBPBookTest {
 
@@ -38,10 +37,7 @@ class MBPBookTest {
     @Test
     void testInitialMarketUpdate() {
         List<BidAskLevel> levels = List.of(
-                makeBidAskLevel(100, 50, 101, 40),
-                makeBidAskLevel(99, 30, 102, 35),
-                makeBidAskLevel(98, 25, 103, 30)
-        );
+                makeBidAskLevel(100, 50, 101, 40), makeBidAskLevel(99, 30, 102, 35), makeBidAskLevel(98, 25, 103, 30));
         book.onMarketUpdate(levels);
 
         assertEquals(100L, book.getBestBid());
@@ -126,15 +122,13 @@ class MBPBookTest {
 
     @Test
     void testGetMatchingOrdersBuy() {
-        List<BidAskLevel> levels = List.of(
-                makeBidAskLevel(100, 50, 101, 40),
-                makeBidAskLevel(99, 30, 102, 35)
-        );
+        List<BidAskLevel> levels = List.of(makeBidAskLevel(100, 50, 101, 40), makeBidAskLevel(99, 30, 102, 35));
         book.onMarketUpdate(levels);
 
         // Market buy, should match against all asks starting at 101
         BacktestOrder order = makeOrder(0, 60, Side.Bid, "BUY_1");
-        BacktestOrder marketOrder = new BacktestOrder(1, 1, "BUY_1", Side.Bid, 0, 60, OrderType.MARKET, TimeInForce.GOOD_TILL_CANCELED);
+        BacktestOrder marketOrder =
+                new BacktestOrder(1, 1, "BUY_1", Side.Bid, 0, 60, OrderType.MARKET, TimeInForce.GOOD_TILL_CANCELED);
         List<OrderMatch> matches = book.getMatchingOrders(marketOrder);
 
         assertEquals(2, matches.size());
@@ -146,10 +140,7 @@ class MBPBookTest {
 
     @Test
     void testGetMatchingOrdersLimitBuyPriceRestriction() {
-        List<BidAskLevel> levels = List.of(
-                makeBidAskLevel(100, 50, 101, 40),
-                makeBidAskLevel(99, 30, 103, 35)
-        );
+        List<BidAskLevel> levels = List.of(makeBidAskLevel(100, 50, 101, 40), makeBidAskLevel(99, 30, 103, 35));
         book.onMarketUpdate(levels);
 
         // Limit buy at 101: should only match the ask at 101, not 103
@@ -171,16 +162,14 @@ class MBPBookTest {
         book.addLocalOrder(askOrder);
 
         // Try to buy against 101 where we have a local order
-        BacktestOrder buyOrder = new BacktestOrder(1, 1, "BUY_1", Side.Bid, 0, 10, OrderType.MARKET, TimeInForce.GOOD_TILL_CANCELED);
+        BacktestOrder buyOrder =
+                new BacktestOrder(1, 1, "BUY_1", Side.Bid, 0, 10, OrderType.MARKET, TimeInForce.GOOD_TILL_CANCELED);
         assertThrows(IllegalStateException.class, () -> book.getMatchingOrders(buyOrder));
     }
 
     @Test
     void testMarketUpdateRemovesLevel() {
-        List<BidAskLevel> initial = List.of(
-                makeBidAskLevel(100, 50, 101, 40),
-                makeBidAskLevel(99, 30, 102, 35)
-        );
+        List<BidAskLevel> initial = List.of(makeBidAskLevel(100, 50, 101, 40), makeBidAskLevel(99, 30, 102, 35));
         book.onMarketUpdate(initial);
 
         // Update that removes level 99 and 102 (not present in new snapshot)
@@ -197,10 +186,7 @@ class MBPBookTest {
     void testLifecycle() {
         // Set up initial book
         List<BidAskLevel> levels = List.of(
-                makeBidAskLevel(100, 50, 101, 40),
-                makeBidAskLevel(99, 30, 102, 35),
-                makeBidAskLevel(98, 25, 103, 30)
-        );
+                makeBidAskLevel(100, 50, 101, 40), makeBidAskLevel(99, 30, 102, 35), makeBidAskLevel(98, 25, 103, 30));
         book.onMarketUpdate(levels);
 
         assertEquals(100L, book.getBestBid());

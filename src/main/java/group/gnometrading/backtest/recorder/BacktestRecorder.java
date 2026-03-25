@@ -94,8 +94,8 @@ public final class BacktestRecorder {
 
     // --- Execution report recording ---
 
-    public void onExecutionReport(long timestamp, BacktestExecutionReport report,
-                                  int strategyId, long orderPrice, long orderSize) {
+    public void onExecutionReport(
+            long timestamp, BacktestExecutionReport report, int strategyId, long orderPrice, long orderSize) {
         if (execCount == execTimestampEvent.length) {
             growExecArrays();
         }
@@ -398,9 +398,16 @@ public final class BacktestRecorder {
 
     // --- Schema-specific field extraction ---
 
-    private void writeBookFields(int idx, int exchangeId, long securityId,
-                                 long bidPrice, long askPrice, long bidSize, long askSize,
-                                 long tradePrice, long tradeSize) {
+    private void writeBookFields(
+            int idx,
+            int exchangeId,
+            long securityId,
+            long bidPrice,
+            long askPrice,
+            long bidSize,
+            long askSize,
+            long tradePrice,
+            long tradeSize) {
         marketExchangeId[idx] = exchangeId;
         marketSecurityId[idx] = securityId;
         marketBestBidPrice[idx] = bidPrice;
@@ -415,30 +422,58 @@ public final class BacktestRecorder {
 
     private void writeMbp10(int idx, MBP10Schema schema) {
         var decoder = schema.decoder;
-        writeBookFields(idx, decoder.exchangeId(), decoder.securityId(),
-                decoder.bidPrice0(), decoder.askPrice0(), decoder.bidSize0(), decoder.askSize0(),
-                decoder.price(), decoder.size());
+        writeBookFields(
+                idx,
+                decoder.exchangeId(),
+                decoder.securityId(),
+                decoder.bidPrice0(),
+                decoder.askPrice0(),
+                decoder.bidSize0(),
+                decoder.askSize0(),
+                decoder.price(),
+                decoder.size());
     }
 
     private void writeMbp1(int idx, MBP1Schema schema) {
         var decoder = schema.decoder;
-        writeBookFields(idx, decoder.exchangeId(), decoder.securityId(),
-                decoder.bidPrice0(), decoder.askPrice0(), decoder.bidSize0(), decoder.askSize0(),
-                decoder.price(), decoder.size());
+        writeBookFields(
+                idx,
+                decoder.exchangeId(),
+                decoder.securityId(),
+                decoder.bidPrice0(),
+                decoder.askPrice0(),
+                decoder.bidSize0(),
+                decoder.askSize0(),
+                decoder.price(),
+                decoder.size());
     }
 
     private void writeBbo1S(int idx, BBO1SSchema schema) {
         var decoder = schema.decoder;
-        writeBookFields(idx, decoder.exchangeId(), decoder.securityId(),
-                decoder.bidPrice0(), decoder.askPrice0(), decoder.bidSize0(), decoder.askSize0(),
-                decoder.price(), decoder.size());
+        writeBookFields(
+                idx,
+                decoder.exchangeId(),
+                decoder.securityId(),
+                decoder.bidPrice0(),
+                decoder.askPrice0(),
+                decoder.bidSize0(),
+                decoder.askSize0(),
+                decoder.price(),
+                decoder.size());
     }
 
     private void writeBbo1M(int idx, BBO1MSchema schema) {
         var decoder = schema.decoder;
-        writeBookFields(idx, decoder.exchangeId(), decoder.securityId(),
-                decoder.bidPrice0(), decoder.askPrice0(), decoder.bidSize0(), decoder.askSize0(),
-                decoder.price(), decoder.size());
+        writeBookFields(
+                idx,
+                decoder.exchangeId(),
+                decoder.securityId(),
+                decoder.bidPrice0(),
+                decoder.askPrice0(),
+                decoder.bidSize0(),
+                decoder.askSize0(),
+                decoder.price(),
+                decoder.size());
     }
 
     private void writeTrades(int idx, TradesSchema schema) {

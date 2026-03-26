@@ -243,7 +243,7 @@ class MBPMarketDataTest {
         assertFalse(reports.isEmpty());
         BacktestExecutionReport report = reports.get(0);
         assertEquals("ASK_1", report.clientOid);
-        assertEquals(ExecType.FILL, report.execType);
+        assertEquals(ExecType.PARTIAL_FILL, report.execType);
         assertEquals(OrderStatus.PARTIALLY_FILLED, report.orderStatus);
         assertEquals(3, report.filledQty);
         assertEquals(17, report.leavesQty);

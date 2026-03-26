@@ -161,7 +161,7 @@ class MBPBookTest {
         BacktestOrder askOrder = makeOrder(101, 10, Side.Ask, "ASK_1");
         book.addLocalOrder(askOrder);
 
-        // Try to buy against 101 where we have a local order
+        // Try to buy against 101 where we have a local order — should throw
         BacktestOrder buyOrder =
                 new BacktestOrder(1, 1, "BUY_1", Side.Bid, 0, 10, OrderType.MARKET, TimeInForce.GOOD_TILL_CANCELED);
         assertThrows(IllegalStateException.class, () -> book.getMatchingOrders(buyOrder));

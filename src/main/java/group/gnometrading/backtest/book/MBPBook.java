@@ -321,8 +321,12 @@ public final class MbpBook {
             }
 
             OrderBookLevel level = entry.getValue();
-            if (level.hasLocalOrders() || level.size == 0) {
+            if (level.size == 0) {
                 continue;
+            }
+            if (level.hasLocalOrders()) {
+                throw new IllegalStateException("Self-trade detected: " + order.side()
+                        + " order would cross local order at price " + levelPrice);
             }
 
             long matchSize = Math.min(remainingSize, level.size);

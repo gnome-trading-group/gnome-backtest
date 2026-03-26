@@ -232,6 +232,74 @@ public final class MbpBook {
     }
 
     /**
+     * Amends a local order's price and/or size. If price changes, the order moves to a new
+     * level and loses queue position. If only size changes, it stays in place.
+     * Returns true if the order was found and amended.
+     */
+    public boolean amendLocalOrder(String clientOid, long newPrice, long newSize) {
+        // Find in bid or ask maps
+        LocalOrder localOrder = localBidOrders.get(clientOid);
+        Side side = Side.Bid;
+        if (localOrder == null) {
+            localOrder = localAskOrders.get(clientOid);
+            side = Side.Ask;
+        }
+        if (localOrder == null) {
+            return false;
+        }
+
+        TreeMap<Long, OrderBookLevel> book = side == Side.Bid ? bids : asks;
+        long oldPrice = localOrder.order.price();
+
+        if (oldPrice != newPrice) {
+            // Price changed — remove from old level, add to new level (loses queue position)
+            OrderBookLevel oldLevel = book.get(oldPrice);
+            if (oldLevel != null) {
+                oldLevel.localOrders.remove(localOrder);
+            }
+
+            // Create new order with updated price/size
+            BacktestOrder newOrder = new BacktestOrder(
+                    localOrder.order.exchangeId(),
+                    localOrder.order.securityId(),
+                    localOrder.order.clientOid(),
+                    localOrder.order.side(),
+                    newPrice,
+                    newSize,
+                    localOrder.order.orderType(),
+                    localOrder.order.timeInForce());
+            localOrder.order = newOrder;
+            localOrder.remaining = newSize;
+
+            // Add to new price level
+            OrderBookLevel newLevel = book.get(newPrice);
+            if (newLevel == null) {
+                newLevel = new OrderBookLevel(newPrice, 0);
+                book.put(newPrice, newLevel);
+            }
+            localOrder.phantomVolume = newLevel.size;
+            newLevel.localOrders.addLast(localOrder);
+        } else if (localOrder.order.size() != newSize) {
+            // Only size changed — update in place, keep queue position
+            long sizeDiff = newSize - localOrder.order.size();
+            localOrder.remaining = Math.max(0, localOrder.remaining + sizeDiff);
+
+            BacktestOrder newOrder = new BacktestOrder(
+                    localOrder.order.exchangeId(),
+                    localOrder.order.securityId(),
+                    localOrder.order.clientOid(),
+                    localOrder.order.side(),
+                    localOrder.order.price(),
+                    newSize,
+                    localOrder.order.orderType(),
+                    localOrder.order.timeInForce());
+            localOrder.order = newOrder;
+        }
+
+        return true;
+    }
+
+    /**
      * Returns immediate matches for the order by walking the opposite side of the book.
      * Skips levels with local orders to avoid self-fills.
      */
@@ -288,6 +356,9 @@ public final class MbpBook {
         allPrices.addAll(curr.keySet());
 
         for (long price : allPrices) {
+            if (price == PRICE_NULL) {
+                continue;
+            }
             OrderBookLevel prevLevel = book.get(price);
             long prevSize = prevLevel != null ? prevLevel.size : 0;
             long newSize = curr.getOrDefault(price, 0L);

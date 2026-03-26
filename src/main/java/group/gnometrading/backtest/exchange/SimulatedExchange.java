@@ -10,6 +10,8 @@ public interface SimulatedExchange {
 
     List<BacktestExecutionReport> cancelOrder(BacktestCancelOrder cancel);
 
+    List<BacktestExecutionReport> amendOrder(BacktestAmendOrder amend);
+
     List<BacktestExecutionReport> onMarketData(Schema data);
 
     long simulateNetworkLatency();

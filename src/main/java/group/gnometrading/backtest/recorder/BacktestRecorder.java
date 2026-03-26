@@ -2,14 +2,14 @@ package group.gnometrading.backtest.recorder;
 
 import group.gnometrading.backtest.exchange.BacktestExecutionReport;
 import group.gnometrading.oms.intent.Intent;
-import group.gnometrading.schemas.BBO1MSchema;
-import group.gnometrading.schemas.BBO1SSchema;
-import group.gnometrading.schemas.MBOSchema;
-import group.gnometrading.schemas.MBP10Schema;
-import group.gnometrading.schemas.MBP1Schema;
-import group.gnometrading.schemas.OHLCV1HSchema;
-import group.gnometrading.schemas.OHLCV1MSchema;
-import group.gnometrading.schemas.OHLCV1SSchema;
+import group.gnometrading.schemas.Bbo1mSchema;
+import group.gnometrading.schemas.Bbo1sSchema;
+import group.gnometrading.schemas.MboSchema;
+import group.gnometrading.schemas.Mbp10Schema;
+import group.gnometrading.schemas.Mbp1Schema;
+import group.gnometrading.schemas.Ohlcv1hSchema;
+import group.gnometrading.schemas.Ohlcv1mSchema;
+import group.gnometrading.schemas.Ohlcv1sSchema;
 import group.gnometrading.schemas.Schema;
 import group.gnometrading.schemas.TradesSchema;
 import java.util.Arrays;
@@ -80,15 +80,15 @@ public final class BacktestRecorder {
         marketTimestamp[idx] = timestamp;
 
         switch (data.schemaType) {
-            case MBP_10 -> writeMbp10(idx, (MBP10Schema) data);
-            case MBP_1 -> writeMbp1(idx, (MBP1Schema) data);
-            case BBO_1S -> writeBbo1S(idx, (BBO1SSchema) data);
-            case BBO_1M -> writeBbo1M(idx, (BBO1MSchema) data);
+            case MBP_10 -> writeMbp10(idx, (Mbp10Schema) data);
+            case MBP_1 -> writeMbp1(idx, (Mbp1Schema) data);
+            case BBO_1S -> writeBbo1S(idx, (Bbo1sSchema) data);
+            case BBO_1M -> writeBbo1M(idx, (Bbo1mSchema) data);
             case TRADES -> writeTrades(idx, (TradesSchema) data);
-            case MBO -> writeMbo(idx, (MBOSchema) data);
-            case OHLCV_1S -> writeOhlcv1S(idx, (OHLCV1SSchema) data);
-            case OHLCV_1M -> writeOhlcv1M(idx, (OHLCV1MSchema) data);
-            case OHLCV_1H -> writeOhlcv1H(idx, (OHLCV1HSchema) data);
+            case MBO -> writeMbo(idx, (MboSchema) data);
+            case OHLCV_1S -> writeOhlcv1S(idx, (Ohlcv1sSchema) data);
+            case OHLCV_1M -> writeOhlcv1M(idx, (Ohlcv1mSchema) data);
+            case OHLCV_1H -> writeOhlcv1H(idx, (Ohlcv1hSchema) data);
         }
     }
 
@@ -420,7 +420,7 @@ public final class BacktestRecorder {
         marketLastTradeSize[idx] = tradeSize;
     }
 
-    private void writeMbp10(int idx, MBP10Schema schema) {
+    private void writeMbp10(int idx, Mbp10Schema schema) {
         var decoder = schema.decoder;
         writeBookFields(
                 idx,
@@ -434,7 +434,7 @@ public final class BacktestRecorder {
                 decoder.size());
     }
 
-    private void writeMbp1(int idx, MBP1Schema schema) {
+    private void writeMbp1(int idx, Mbp1Schema schema) {
         var decoder = schema.decoder;
         writeBookFields(
                 idx,
@@ -448,7 +448,7 @@ public final class BacktestRecorder {
                 decoder.size());
     }
 
-    private void writeBbo1S(int idx, BBO1SSchema schema) {
+    private void writeBbo1S(int idx, Bbo1sSchema schema) {
         var decoder = schema.decoder;
         writeBookFields(
                 idx,
@@ -462,7 +462,7 @@ public final class BacktestRecorder {
                 decoder.size());
     }
 
-    private void writeBbo1M(int idx, BBO1MSchema schema) {
+    private void writeBbo1M(int idx, Bbo1mSchema schema) {
         var decoder = schema.decoder;
         writeBookFields(
                 idx,
@@ -484,7 +484,7 @@ public final class BacktestRecorder {
         marketLastTradeSize[idx] = decoder.size();
     }
 
-    private void writeMbo(int idx, MBOSchema schema) {
+    private void writeMbo(int idx, MboSchema schema) {
         var decoder = schema.decoder;
         marketExchangeId[idx] = decoder.exchangeId();
         marketSecurityId[idx] = decoder.securityId();
@@ -492,7 +492,7 @@ public final class BacktestRecorder {
         marketLastTradeSize[idx] = decoder.size();
     }
 
-    private void writeOhlcv1S(int idx, OHLCV1SSchema schema) {
+    private void writeOhlcv1S(int idx, Ohlcv1sSchema schema) {
         var decoder = schema.decoder;
         long close = decoder.close();
         marketExchangeId[idx] = decoder.exchangeId();
@@ -503,7 +503,7 @@ public final class BacktestRecorder {
         marketLastTradePrice[idx] = close;
     }
 
-    private void writeOhlcv1M(int idx, OHLCV1MSchema schema) {
+    private void writeOhlcv1M(int idx, Ohlcv1mSchema schema) {
         var decoder = schema.decoder;
         long close = decoder.close();
         marketExchangeId[idx] = decoder.exchangeId();
@@ -514,7 +514,7 @@ public final class BacktestRecorder {
         marketLastTradePrice[idx] = close;
     }
 
-    private void writeOhlcv1H(int idx, OHLCV1HSchema schema) {
+    private void writeOhlcv1H(int idx, Ohlcv1hSchema schema) {
         var decoder = schema.decoder;
         long close = decoder.close();
         marketExchangeId[idx] = decoder.exchangeId();

@@ -1,11 +1,12 @@
 package group.gnometrading.backtest.driver;
 
+import group.gnometrading.MarketDataEntry;
+import group.gnometrading.backtest.exchange.BacktestAmendOrder;
 import group.gnometrading.backtest.exchange.BacktestCancelOrder;
 import group.gnometrading.backtest.exchange.BacktestExecutionReport;
 import group.gnometrading.backtest.exchange.BacktestOrder;
 import group.gnometrading.backtest.exchange.SimulatedExchange;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
-import group.gnometrading.collector.MarketDataEntry;
 import group.gnometrading.schemas.Schema;
 import group.gnometrading.schemas.SchemaType;
 import java.time.LocalDateTime;
@@ -38,6 +39,9 @@ public final class BacktestDriver {
     private BacktestRecorder recorder;
     private PriorityQueue<BacktestEvent> queue;
     private boolean ready = false;
+    private int eventsProcessed = 0;
+    private int initialQueueSize = 0;
+    private long lastTimestamp = 0;
 
     public BacktestDriver(
             LocalDateTime startDate,
@@ -82,7 +86,20 @@ public final class BacktestDriver {
                 queue.add(new BacktestEvent(localTs, EventType.LOCAL_MARKET_DATA, schema));
             }
         }
+        initialQueueSize = queue.size();
         ready = true;
+    }
+
+    public int getEventsProcessed() {
+        return eventsProcessed;
+    }
+
+    public int getInitialQueueSize() {
+        return initialQueueSize;
+    }
+
+    public long getLastTimestamp() {
+        return lastTimestamp;
     }
 
     public void fullyExecute() {
@@ -100,6 +117,8 @@ public final class BacktestDriver {
                 break;
             }
             queue.poll();
+            eventsProcessed++;
+            lastTimestamp = event.timestamp;
 
             try {
                 processEvent(event);
@@ -118,12 +137,21 @@ public final class BacktestDriver {
                 List<BacktestExecutionReport> reports = exchange.onMarketData(schema);
                 for (BacktestExecutionReport report : reports) {
                     long deliveryTs = event.timestamp + exchange.simulateNetworkLatency();
+                    report.timestampEvent = event.timestamp;
+                    report.timestampRecv = deliveryTs;
                     queue.add(new BacktestEvent(deliveryTs, EventType.EXCHANGE_MESSAGE, report));
                 }
             }
             case EXCHANGE_MESSAGE -> {
                 BacktestExecutionReport report = (BacktestExecutionReport) event.data;
-                strategy.onExecutionReport(event.timestamp, report);
+                List<LocalMessage> messages = strategy.onExecutionReport(event.timestamp, report);
+                if (messages != null) {
+                    for (LocalMessage message : messages) {
+                        SimulatedExchange exchange = getExchangeForMessage(message);
+                        long deliveryTs = event.timestamp + exchange.simulateNetworkLatency();
+                        queue.add(new BacktestEvent(deliveryTs, EventType.LOCAL_MESSAGE, message));
+                    }
+                }
             }
             case LOCAL_MARKET_DATA -> {
                 Schema schema = (Schema) event.data;
@@ -147,6 +175,8 @@ public final class BacktestDriver {
                     reports = exchange.submitOrder(om.order());
                 } else if (message instanceof LocalMessage.CancelOrderMessage cm) {
                     reports = exchange.cancelOrder(cm.cancelOrder());
+                } else if (message instanceof LocalMessage.AmendOrderMessage am) {
+                    reports = exchange.amendOrder(am.amendOrder());
                 } else {
                     throw new IllegalStateException("Unknown local message type: " + message.getClass());
                 }
@@ -178,6 +208,9 @@ public final class BacktestDriver {
         } else if (message instanceof LocalMessage.CancelOrderMessage cm) {
             BacktestCancelOrder cancel = cm.cancelOrder();
             return exchanges.get(cancel.exchangeId()).get(cancel.securityId());
+        } else if (message instanceof LocalMessage.AmendOrderMessage am) {
+            BacktestAmendOrder amend = am.amendOrder();
+            return exchanges.get(amend.exchangeId()).get(amend.securityId());
         }
         throw new IllegalStateException("Unknown message type: " + message.getClass());
     }
@@ -190,6 +223,9 @@ public final class BacktestDriver {
         } else if (message instanceof LocalMessage.CancelOrderMessage cm) {
             report.exchangeId = cm.cancelOrder().exchangeId();
             report.securityId = cm.cancelOrder().securityId();
+        } else if (message instanceof LocalMessage.AmendOrderMessage am) {
+            report.exchangeId = am.amendOrder().exchangeId();
+            report.securityId = am.amendOrder().securityId();
         }
     }
 }

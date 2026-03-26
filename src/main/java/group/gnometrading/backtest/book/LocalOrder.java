@@ -2,9 +2,9 @@ package group.gnometrading.backtest.book;
 
 import group.gnometrading.backtest.exchange.BacktestOrder;
 
-public final class LocalOrder {
+public class LocalOrder {
 
-    public BacktestOrder order;
+    public final BacktestOrder order;
     public long remaining;
     public long phantomVolume;
     public long cumulativeTradedQuantity;

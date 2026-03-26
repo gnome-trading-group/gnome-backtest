@@ -84,6 +84,18 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
     }
 
     @Override
+    public List<BacktestExecutionReport> amendOrder(BacktestAmendOrder amend) {
+        if (orderBook.amendLocalOrder(amend.clientOid(), amend.newPrice(), amend.newSize())) {
+            BacktestExecutionReport report = new BacktestExecutionReport(
+                    amend.clientOid(), ExecType.NEW, OrderStatus.NEW, 0, 0, 0, amend.newSize(), 0.0);
+            report.exchangeId = amend.exchangeId();
+            report.securityId = amend.securityId();
+            return List.of(report);
+        }
+        return List.of(BacktestExecutionReport.rejected(amend.clientOid()));
+    }
+
+    @Override
     public long simulateNetworkLatency() {
         return networkLatency.simulate();
     }

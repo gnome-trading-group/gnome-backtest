@@ -1,6 +1,7 @@
 package group.gnometrading.backtest.oms;
 
 import group.gnometrading.backtest.driver.LocalMessage;
+import group.gnometrading.backtest.exchange.BacktestAmendOrder;
 import group.gnometrading.backtest.exchange.BacktestCancelOrder;
 import group.gnometrading.backtest.exchange.BacktestExecutionReport;
 import group.gnometrading.backtest.exchange.BacktestOrder;
@@ -113,20 +114,12 @@ public final class OmsBacktestAdapter {
             }
             case REPLACE -> {
                 OmsReplaceOrder rep = action.replace();
-                buffer.add(new LocalMessage.CancelOrderMessage(new BacktestCancelOrder(
-                        rep.exchangeId(), (int) rep.securityId(), String.valueOf(rep.originalClientOid()))));
-                // TrackedOrder tracked = oms.getOrder(rep.originalClientOid());
-                // if (tracked != null) {
-                //     buffer.add(new LocalMessage.OrderMessage(new BacktestOrder(
-                //             rep.exchangeId(),
-                //             (int) rep.securityId(),
-                //             String.valueOf(rep.newClientOid()),
-                //             tracked.getSide(),
-                //             rep.price(),
-                //             rep.size(),
-                //             tracked.getOrderType(),
-                //             tracked.getTimeInForce())));
-                // }
+                buffer.add(new LocalMessage.AmendOrderMessage(new BacktestAmendOrder(
+                        rep.exchangeId(),
+                        (int) rep.securityId(),
+                        String.valueOf(rep.originalClientOid()),
+                        rep.price(),
+                        rep.size())));
             }
             case CANCEL -> {
                 OmsCancelOrder cancel = action.cancel();

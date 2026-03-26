@@ -7,7 +7,7 @@ import group.gnometrading.backtest.latency.LatencyModel;
 import group.gnometrading.backtest.queues.QueueModel;
 import group.gnometrading.schemas.Action;
 import group.gnometrading.schemas.ExecType;
-import group.gnometrading.schemas.MBP10Schema;
+import group.gnometrading.schemas.Mbp10Schema;
 import group.gnometrading.schemas.OrderStatus;
 import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Side;
@@ -50,7 +50,7 @@ class MBPMarketDataTest {
     }
 
     /** Creates an MBP10 market update with up to two bid/ask levels. */
-    static MBP10Schema makeMarketUpdate(
+    static Mbp10Schema makeMarketUpdate(
             Action action,
             long bidPx0,
             long bidSz0,
@@ -60,7 +60,7 @@ class MBPMarketDataTest {
             long bidSz1,
             long askPx1,
             long askSz1) {
-        MBP10Schema schema = new MBP10Schema();
+        Mbp10Schema schema = new Mbp10Schema();
         schema.encoder.action(action);
         schema.encoder.side(Side.None);
         schema.encoder.price(PRICE_NULL);
@@ -117,12 +117,12 @@ class MBPMarketDataTest {
         return schema;
     }
 
-    static MBP10Schema makeSingleLevelUpdate(long bidPx, long bidSz, long askPx, long askSz) {
+    static Mbp10Schema makeSingleLevelUpdate(long bidPx, long bidSz, long askPx, long askSz) {
         return makeMarketUpdate(Action.Add, bidPx, bidSz, askPx, askSz, PRICE_NULL, -1, PRICE_NULL, -1);
     }
 
-    static MBP10Schema makeTrade(Side side, long price, long size) {
-        MBP10Schema schema = new MBP10Schema();
+    static Mbp10Schema makeTrade(Side side, long price, long size) {
+        Mbp10Schema schema = new Mbp10Schema();
         schema.encoder.action(Action.Trade);
         schema.encoder.side(side);
         schema.encoder.price(price);
@@ -188,17 +188,17 @@ class MBPMarketDataTest {
     @Test
     void testMarketUpdateSeedsBidAsk() {
         // Just verifying that onMarketData doesn't throw when no local orders
-        MBP10Schema update = makeSingleLevelUpdate(100, 50, 102, 40);
+        Mbp10Schema update = makeSingleLevelUpdate(100, 50, 102, 40);
         List<BacktestExecutionReport> reports = exchange.onMarketData(update);
         assertTrue(reports.isEmpty());
     }
 
     @Test
     void testTradeNoLocalOrdersProducesNoReports() {
-        MBP10Schema update = makeSingleLevelUpdate(100, 50, 102, 40);
+        Mbp10Schema update = makeSingleLevelUpdate(100, 50, 102, 40);
         exchange.onMarketData(update);
 
-        MBP10Schema trade = makeTrade(Side.Bid, 102, 10);
+        Mbp10Schema trade = makeTrade(Side.Bid, 102, 10);
         List<BacktestExecutionReport> reports = exchange.onMarketData(trade);
         assertTrue(reports.isEmpty());
     }
@@ -206,7 +206,7 @@ class MBPMarketDataTest {
     @Test
     void testTradeFilledLocalAskOrder() {
         // Seed the book
-        MBP10Schema update = makeSingleLevelUpdate(100, 50, 102, 40);
+        Mbp10Schema update = makeSingleLevelUpdate(100, 50, 102, 40);
         exchange.onMarketData(update);
 
         // Place a local ask at 102 (phantom = 40 since that's the market depth)
@@ -214,7 +214,7 @@ class MBPMarketDataTest {
         exchange.submitOrder(askOrder);
 
         // Trade: buy 50 at 102 (phantom=40, trade=50 → 50-40=10 fills, but order is only 8)
-        MBP10Schema trade = makeTrade(Side.Bid, 102, 50);
+        Mbp10Schema trade = makeTrade(Side.Bid, 102, 50);
         List<BacktestExecutionReport> reports = exchange.onMarketData(trade);
 
         assertFalse(reports.isEmpty());
@@ -229,7 +229,7 @@ class MBPMarketDataTest {
     @Test
     void testTradePartialFillLocalOrder() {
         // Seed the book
-        MBP10Schema update = makeSingleLevelUpdate(100, 50, 102, 5);
+        Mbp10Schema update = makeSingleLevelUpdate(100, 50, 102, 5);
         exchange.onMarketData(update);
 
         // Local ask with phantom = 5 (market depth at 102)
@@ -237,7 +237,7 @@ class MBPMarketDataTest {
         exchange.submitOrder(askOrder);
 
         // Trade 8 at 102: phantom=5, trade=8 → fills 3 of our 20 remaining
-        MBP10Schema trade = makeTrade(Side.Bid, 102, 8);
+        Mbp10Schema trade = makeTrade(Side.Bid, 102, 8);
         List<BacktestExecutionReport> reports = exchange.onMarketData(trade);
 
         assertFalse(reports.isEmpty());
@@ -252,7 +252,7 @@ class MBPMarketDataTest {
     @Test
     void testTradeFilledLocalBidOrder() {
         // Seed the book
-        MBP10Schema update = makeSingleLevelUpdate(100, 10, 102, 40);
+        Mbp10Schema update = makeSingleLevelUpdate(100, 10, 102, 40);
         exchange.onMarketData(update);
 
         // Local bid at 100 with phantom = 10 (market depth at 100)
@@ -260,7 +260,7 @@ class MBPMarketDataTest {
         exchange.submitOrder(bidOrder);
 
         // Sell trade at 100: phantom=10, trade=20 → fills 5 of our bid
-        MBP10Schema trade = makeTrade(Side.Ask, 100, 20);
+        Mbp10Schema trade = makeTrade(Side.Ask, 100, 20);
         List<BacktestExecutionReport> reports = exchange.onMarketData(trade);
 
         assertFalse(reports.isEmpty());
@@ -271,14 +271,14 @@ class MBPMarketDataTest {
     @Test
     void testFeeCalculationOnFill() {
         // phantom=5 at ask=102, so trade=15 → remainingVolume=15-5=10 → fills all 10 of ASK_1
-        MBP10Schema update = makeSingleLevelUpdate(100, 0, 102, 5);
+        Mbp10Schema update = makeSingleLevelUpdate(100, 0, 102, 5);
         exchange.onMarketData(update);
 
         BacktestOrder askOrder = makeOrder(102, 10, Side.Ask, "ASK_1", OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
         exchange.submitOrder(askOrder);
 
         // Trade fills ASK_1: price=102, size=10, total=1020. Maker fee = 3% = 30.6
-        MBP10Schema trade = makeTrade(Side.Bid, 102, 15);
+        Mbp10Schema trade = makeTrade(Side.Bid, 102, 15);
         List<BacktestExecutionReport> reports = exchange.onMarketData(trade);
 
         assertFalse(reports.isEmpty());

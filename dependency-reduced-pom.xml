@@ -3,7 +3,7 @@
   <parent>
     <artifactId>gnome-parent</artifactId>
     <groupId>group.gnometrading</groupId>
-    <version>1.0.1</version>
+    <version>1.4.2</version>
     <relativePath>../pom.xml/pom.xml</relativePath>
   </parent>
   <modelVersion>4.0.0</modelVersion>
@@ -15,16 +15,6 @@
   </scm>
   <build>
     <plugins>
-      <plugin>
-        <artifactId>maven-surefire-plugin</artifactId>
-        <configuration>
-          <argLine>--add-opens java.base/jdk.internal.misc=ALL-UNNAMED
-                        --add-opens java.base/sun.nio.ch=ALL-UNNAMED
-                        --add-opens java.base/java.nio=ALL-UNNAMED
-                        --add-opens java.base/java.lang.reflect=ALL-UNNAMED
-                        --add-opens java.base/java.util.concurrent=ALL-UNNAMED</argLine>
-        </configuration>
-      </plugin>
       <plugin>
         <artifactId>maven-shade-plugin</artifactId>
         <executions>

@@ -13,7 +13,6 @@ import group.gnometrading.backtest.latency.LatencyModel;
 import group.gnometrading.backtest.queues.QueueModel;
 import group.gnometrading.schemas.Action;
 import group.gnometrading.schemas.ExecType;
-import group.gnometrading.schemas.MBP10Schema;
 import group.gnometrading.schemas.OrderStatus;
 import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Side;
@@ -105,7 +104,7 @@ class GoldenFixtureTest {
 
         // Seed initial book state
         if (fixture.initial_levels() != null && !fixture.initial_levels().isEmpty()) {
-            MBP10Schema init = buildAddSchema(fixture.initial_levels());
+            Mbp10Schema init = buildAddSchema(fixture.initial_levels());
             exchange.onMarketData(init);
         }
 
@@ -123,11 +122,11 @@ class GoldenFixtureTest {
                     actual = exchange.cancelOrder(cancel);
                 }
                 case "trade" -> {
-                    MBP10Schema trade = buildTradeSchema(event.price(), event.size(), toSide(event.side()));
+                    Mbp10Schema trade = buildTradeSchema(event.price(), event.size(), toSide(event.side()));
                     actual = exchange.onMarketData(trade);
                 }
                 case "market_update" -> {
-                    MBP10Schema update = buildAddSchema(event.order() != null ? List.of() : fixture.initial_levels());
+                    Mbp10Schema update = buildAddSchema(event.order() != null ? List.of() : fixture.initial_levels());
                     actual = exchange.onMarketData(update);
                 }
                 default -> throw new IllegalArgumentException("Unknown event type: " + event.type());
@@ -167,8 +166,8 @@ class GoldenFixtureTest {
 
     // ---- Schema builders ----
 
-    private static MBP10Schema buildAddSchema(List<FixtureLevel> levels) {
-        MBP10Schema schema = new MBP10Schema();
+    private static Mbp10Schema buildAddSchema(List<FixtureLevel> levels) {
+        Mbp10Schema schema = new Mbp10Schema();
         schema.encoder.action(Action.Add);
         schema.encoder.side(Side.None);
         schema.encoder.price(PRICE_NULL);
@@ -180,8 +179,8 @@ class GoldenFixtureTest {
         return schema;
     }
 
-    private static MBP10Schema buildTradeSchema(long price, long size, Side side) {
-        MBP10Schema schema = new MBP10Schema();
+    private static Mbp10Schema buildTradeSchema(long price, long size, Side side) {
+        Mbp10Schema schema = new Mbp10Schema();
         schema.encoder.action(Action.Trade);
         schema.encoder.side(side);
         schema.encoder.price(price);
@@ -192,7 +191,7 @@ class GoldenFixtureTest {
         return schema;
     }
 
-    private static void setLevel(MBP10Schema schema, int idx, FixtureLevel level) {
+    private static void setLevel(Mbp10Schema schema, int idx, FixtureLevel level) {
         long bp = level != null ? level.bid_px() : PRICE_NULL;
         long bs = level != null ? level.bid_sz() : SIZE_NULL;
         long ap = level != null ? level.ask_px() : PRICE_NULL;

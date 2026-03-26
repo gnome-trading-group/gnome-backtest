@@ -1,11 +1,11 @@
 package group.gnometrading.backtest.driver;
 
+import group.gnometrading.MarketDataEntry;
 import group.gnometrading.backtest.exchange.BacktestCancelOrder;
 import group.gnometrading.backtest.exchange.BacktestExecutionReport;
 import group.gnometrading.backtest.exchange.BacktestOrder;
 import group.gnometrading.backtest.exchange.SimulatedExchange;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
-import group.gnometrading.collector.MarketDataEntry;
 import group.gnometrading.schemas.Schema;
 import group.gnometrading.schemas.SchemaType;
 import java.time.LocalDateTime;
@@ -125,7 +125,14 @@ public final class BacktestDriver {
             }
             case EXCHANGE_MESSAGE -> {
                 BacktestExecutionReport report = (BacktestExecutionReport) event.data;
-                strategy.onExecutionReport(event.timestamp, report);
+                List<LocalMessage> messages = strategy.onExecutionReport(event.timestamp, report);
+                if (messages != null) {
+                    for (LocalMessage message : messages) {
+                        SimulatedExchange exchange = getExchangeForMessage(message);
+                        long deliveryTs = event.timestamp + exchange.simulateNetworkLatency();
+                        queue.add(new BacktestEvent(deliveryTs, EventType.LOCAL_MESSAGE, message));
+                    }
+                }
             }
             case LOCAL_MARKET_DATA -> {
                 Schema schema = (Schema) event.data;

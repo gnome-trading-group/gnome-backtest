@@ -10,8 +10,8 @@ import group.gnometrading.backtest.latency.LatencyModel;
 import group.gnometrading.backtest.queues.QueueModel;
 import group.gnometrading.schemas.Action;
 import group.gnometrading.schemas.ExecType;
-import group.gnometrading.schemas.MBP10Schema;
-import group.gnometrading.schemas.MBP1Schema;
+import group.gnometrading.schemas.Mbp10Schema;
+import group.gnometrading.schemas.Mbp1Schema;
 import group.gnometrading.schemas.OrderStatus;
 import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Schema;
@@ -45,9 +45,9 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
 
     @Override
     public List<BacktestExecutionReport> onMarketData(Schema data) {
-        if (data instanceof MBP10Schema mbp10) {
+        if (data instanceof Mbp10Schema mbp10) {
             return onMbp10(mbp10);
-        } else if (data instanceof MBP1Schema mbp1) {
+        } else if (data instanceof Mbp1Schema mbp1) {
             return onMbp1(mbp1);
         }
         throw new IllegalArgumentException("Unsupported schema type: " + data.schemaType);
@@ -98,7 +98,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         return List.of(SchemaType.MBP_10, SchemaType.MBP_1);
     }
 
-    private List<BacktestExecutionReport> onMbp10(MBP10Schema schema) {
+    private List<BacktestExecutionReport> onMbp10(Mbp10Schema schema) {
         Action action = schema.decoder.action();
         if (action == Action.Add || action == Action.Cancel || action == Action.Modify) {
             List<BidAskLevel> levels = extractMbp10Levels(schema);
@@ -114,7 +114,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         return List.of();
     }
 
-    private List<BacktestExecutionReport> onMbp1(MBP1Schema schema) {
+    private List<BacktestExecutionReport> onMbp1(Mbp1Schema schema) {
         Action action = schema.decoder.action();
         if (action == Action.Add || action == Action.Cancel || action == Action.Modify) {
             List<BidAskLevel> levels = extractMbp1Levels(schema);
@@ -266,7 +266,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         return "client_" + orderCounter.incrementAndGet() + "_" + System.nanoTime();
     }
 
-    private List<BidAskLevel> extractMbp10Levels(MBP10Schema schema) {
+    private List<BidAskLevel> extractMbp10Levels(Mbp10Schema schema) {
         var decoder = schema.decoder;
         List<BidAskLevel> levels = new ArrayList<>(10);
         addLevel(levels, decoder.bidPrice0(), decoder.bidSize0(), decoder.askPrice0(), decoder.askSize0());
@@ -282,7 +282,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         return levels;
     }
 
-    private List<BidAskLevel> extractMbp1Levels(MBP1Schema schema) {
+    private List<BidAskLevel> extractMbp1Levels(Mbp1Schema schema) {
         var decoder = schema.decoder;
         List<BidAskLevel> levels = new ArrayList<>(1);
         addLevel(levels, decoder.bidPrice0(), decoder.bidSize0(), decoder.askPrice0(), decoder.askSize0());

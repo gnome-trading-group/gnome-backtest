@@ -14,8 +14,9 @@ public interface BacktestStrategy {
 
     /**
      * Called when the strategy receives an execution report from the exchange.
+     * Returns local messages (orders/cancels) triggered by the report (e.g., queued order replacements).
      */
-    void onExecutionReport(long timestamp, BacktestExecutionReport report);
+    List<LocalMessage> onExecutionReport(long timestamp, BacktestExecutionReport report);
 
     /** Returns simulated strategy processing time in nanoseconds. */
     long simulateProcessingTime();

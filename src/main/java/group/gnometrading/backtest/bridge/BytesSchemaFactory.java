@@ -1,9 +1,9 @@
 package group.gnometrading.backtest.bridge;
 
-import group.gnometrading.schemas.MBP10Decoder;
-import group.gnometrading.schemas.MBP10Schema;
-import group.gnometrading.schemas.MBP1Decoder;
-import group.gnometrading.schemas.MBP1Schema;
+import group.gnometrading.schemas.Mbp10Decoder;
+import group.gnometrading.schemas.Mbp10Schema;
+import group.gnometrading.schemas.Mbp1Decoder;
+import group.gnometrading.schemas.Mbp1Schema;
 import group.gnometrading.schemas.MessageHeaderDecoder;
 import group.gnometrading.schemas.Schema;
 import org.agrona.concurrent.UnsafeBuffer;
@@ -24,14 +24,14 @@ public final class BytesSchemaFactory {
         int templateId = header.templateId();
 
         switch (templateId) {
-            case MBP10Decoder.TEMPLATE_ID -> {
-                MBP10Schema schema = new MBP10Schema();
+            case Mbp10Decoder.TEMPLATE_ID -> {
+                Mbp10Schema schema = new Mbp10Schema();
                 schema.buffer.putBytes(0, data, 0, data.length);
                 schema.decoder.wrapAndApplyHeader(schema.buffer, 0, schema.messageHeaderDecoder);
                 return schema;
             }
-            case MBP1Decoder.TEMPLATE_ID -> {
-                MBP1Schema schema = new MBP1Schema();
+            case Mbp1Decoder.TEMPLATE_ID -> {
+                Mbp1Schema schema = new Mbp1Schema();
                 schema.buffer.putBytes(0, data, 0, data.length);
                 schema.decoder.wrapAndApplyHeader(schema.buffer, 0, schema.messageHeaderDecoder);
                 return schema;

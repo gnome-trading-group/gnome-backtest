@@ -2,7 +2,7 @@ package group.gnometrading.backtest.book;
 
 import group.gnometrading.backtest.exchange.BacktestOrder;
 
-public class LocalOrder {
+public final class LocalOrder {
 
     public BacktestOrder order;
     public long remaining;

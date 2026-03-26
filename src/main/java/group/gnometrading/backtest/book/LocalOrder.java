@@ -4,7 +4,7 @@ import group.gnometrading.backtest.exchange.BacktestOrder;
 
 public class LocalOrder {
 
-    public final BacktestOrder order;
+    public BacktestOrder order;
     public long remaining;
     public long phantomVolume;
     public long cumulativeTradedQuantity;

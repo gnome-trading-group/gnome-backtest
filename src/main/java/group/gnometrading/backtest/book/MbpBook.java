@@ -4,6 +4,7 @@ import group.gnometrading.backtest.exchange.BacktestOrder;
 import group.gnometrading.backtest.queues.QueueModel;
 import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Side;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -87,6 +88,7 @@ public final class MbpBook {
             if (bidLevel == null || !bidLevel.hasLocalOrders()) {
                 continue;
             }
+            bypassPhantom(bidLevel.localOrders);
             long remainingToFill =
                     bidLevel.localOrders.stream().mapToLong(lo -> lo.remaining).sum();
             for (long askPrice : asks.keySet()) {
@@ -117,6 +119,7 @@ public final class MbpBook {
             if (askLevel == null || !askLevel.hasLocalOrders()) {
                 continue;
             }
+            bypassPhantom(askLevel.localOrders);
             long remainingToFill =
                     askLevel.localOrders.stream().mapToLong(lo -> lo.remaining).sum();
             for (long bidPrice : bids.keySet()) {
@@ -135,6 +138,12 @@ public final class MbpBook {
                 remainingToFill -= filledQty;
                 bidLevel.size -= filledQty;
             }
+        }
+    }
+
+    private void bypassPhantom(ArrayDeque<LocalOrder> localOrders) {
+        for (LocalOrder lo : localOrders) {
+            lo.phantomVolume = 0;
         }
     }
 
@@ -227,6 +236,9 @@ public final class MbpBook {
         OrderBookLevel level = book.get(localOrder.order.price());
         if (level != null) {
             level.localOrders.remove(localOrder);
+            if (level.size == 0 && !level.hasLocalOrders()) {
+                book.remove(localOrder.order.price());
+            }
         }
         return true;
     }
@@ -256,6 +268,9 @@ public final class MbpBook {
             OrderBookLevel oldLevel = book.get(oldPrice);
             if (oldLevel != null) {
                 oldLevel.localOrders.remove(localOrder);
+                if (oldLevel.size == 0 && !oldLevel.hasLocalOrders()) {
+                    book.remove(oldPrice);
+                }
             }
 
             // Create new order with updated price/size
@@ -325,8 +340,7 @@ public final class MbpBook {
                 continue;
             }
             if (level.hasLocalOrders()) {
-                throw new IllegalStateException("Self-trade detected: " + order.side()
-                        + " order would cross local order at price " + levelPrice);
+                return Collections.emptyList();
             }
 
             long matchSize = Math.min(remainingSize, level.size);

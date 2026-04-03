@@ -1,16 +1,6 @@
 package group.gnometrading.backtest.driver;
 
-public final class BacktestEvent implements Comparable<BacktestEvent> {
-
-    public final long timestamp;
-    public final EventType eventType;
-    public final Object data;
-
-    public BacktestEvent(long timestamp, EventType eventType, Object data) {
-        this.timestamp = timestamp;
-        this.eventType = eventType;
-        this.data = data;
-    }
+public record BacktestEvent(long timestamp, EventType eventType, Object data) implements Comparable<BacktestEvent> {
 
     @Override
     public int compareTo(BacktestEvent other) {

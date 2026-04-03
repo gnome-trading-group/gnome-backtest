@@ -7,7 +7,9 @@ import group.gnometrading.backtest.latency.LatencyModel;
 import group.gnometrading.backtest.queues.QueueModel;
 import group.gnometrading.schemas.Action;
 import group.gnometrading.schemas.ExecType;
+import group.gnometrading.schemas.MboSchema;
 import group.gnometrading.schemas.Mbp10Schema;
+import group.gnometrading.schemas.Mbp1Schema;
 import group.gnometrading.schemas.OrderStatus;
 import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Side;
@@ -283,5 +285,108 @@ class MBPMarketDataTest {
 
         assertFalse(reports.isEmpty());
         assertEquals(102 * 10 * 0.03, reports.get(0).fee, 0.01);
+    }
+
+    static Mbp1Schema makeMbp1Update(long bidPx, long bidSz, long askPx, long askSz) {
+        Mbp1Schema schema = new Mbp1Schema();
+        schema.encoder.action(Action.Add);
+        schema.encoder.side(Side.None);
+        schema.encoder.price(PRICE_NULL);
+        schema.encoder.size(SIZE_NULL);
+        schema.encoder.bidPrice0(bidPx);
+        schema.encoder.bidSize0(bidSz == -1 ? SIZE_NULL : bidSz);
+        schema.encoder.askPrice0(askPx);
+        schema.encoder.askSize0(askSz == -1 ? SIZE_NULL : askSz);
+        return schema;
+    }
+
+    static Mbp1Schema makeMbp1Trade(Side side, long price, long size) {
+        Mbp1Schema schema = new Mbp1Schema();
+        schema.encoder.action(Action.Trade);
+        schema.encoder.side(side);
+        schema.encoder.price(price);
+        schema.encoder.size(size);
+        schema.encoder.bidPrice0(PRICE_NULL);
+        schema.encoder.bidSize0(SIZE_NULL);
+        schema.encoder.askPrice0(PRICE_NULL);
+        schema.encoder.askSize0(SIZE_NULL);
+        return schema;
+    }
+
+    @Test
+    void testMbp1SchemaBookUpdate() {
+        Mbp1Schema update = makeMbp1Update(100, 50, 101, 40);
+        List<BacktestExecutionReport> reports = exchange.onMarketData(update);
+        assertTrue(reports.isEmpty());
+
+        // Confirm book was seeded: a GTC bid below the ask should be placed (no cross)
+        BacktestOrder bid = makeOrder(100, 5, Side.Bid, "BID_1", OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
+        List<BacktestExecutionReport> submitReports = exchange.submitOrder(bid);
+        assertEquals(1, submitReports.size());
+        assertEquals(ExecType.NEW, submitReports.get(0).execType);
+    }
+
+    @Test
+    void testMbp1SchemaTrade() {
+        // Seed book via MBP1 update
+        exchange.onMarketData(makeMbp1Update(100, 50, 102, 5));
+
+        // Place local ask at 102 (phantom=5)
+        BacktestOrder ask = makeOrder(102, 10, Side.Ask, "ASK_1", OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
+        exchange.submitOrder(ask);
+
+        // Trade via MBP1: trade=15, phantom=5, fill=10
+        List<BacktestExecutionReport> reports = exchange.onMarketData(makeMbp1Trade(Side.Bid, 102, 15));
+
+        assertFalse(reports.isEmpty());
+        assertEquals("ASK_1", reports.get(0).clientOid);
+        assertEquals(ExecType.FILL, reports.get(0).execType);
+        assertEquals(10, reports.get(0).filledQty);
+    }
+
+    @Test
+    void testUnsupportedSchemaTypeThrows() {
+        MboSchema mboSchema = new MboSchema();
+        assertThrows(IllegalArgumentException.class, () -> exchange.onMarketData(mboSchema));
+    }
+
+    @Test
+    void testTradeViaMarketDataFillsMultipleLocalOrders() {
+        // Seed ask at 102 with depth 2
+        exchange.onMarketData(makeSingleLevelUpdate(100, 50, 102, 2));
+
+        // Place two local asks at 102; each gets phantom=2
+        BacktestOrder ask1 = makeOrder(102, 5, Side.Ask, "ASK_1", OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
+        BacktestOrder ask2 = makeOrder(102, 3, Side.Ask, "ASK_2", OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
+        exchange.submitOrder(ask1);
+        exchange.submitOrder(ask2);
+
+        // Trade 15 at 102: phantom=2, remainingVol=13, fills ASK_1(5) then ASK_2(3)
+        List<BacktestExecutionReport> reports = exchange.onMarketData(makeTrade(Side.Bid, 102, 15));
+
+        assertEquals(2, reports.size());
+        assertEquals("ASK_1", reports.get(0).clientOid);
+        assertEquals(5, reports.get(0).filledQty);
+        assertEquals(ExecType.FILL, reports.get(0).execType);
+        assertEquals("ASK_2", reports.get(1).clientOid);
+        assertEquals(3, reports.get(1).filledQty);
+        assertEquals(ExecType.FILL, reports.get(1).execType);
+    }
+
+    @Test
+    void testMarketUpdateWithCrossedBookProducesFills() {
+        // Place local ask at 100 (new level, phantom=0)
+        BacktestOrder ask = makeOrder(100, 8, Side.Ask, "ASK_1", OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
+        exchange.submitOrder(ask);
+
+        // Market update: bid=100/50, ask=100/30 — bid and ask at same price → crossed
+        // checkAskFills: ask at 100, bid at 100/50 ≥ ask price 100, tradeSize=min(8,50)=8
+        // phantom=0, fills 8
+        List<BacktestExecutionReport> reports = exchange.onMarketData(makeSingleLevelUpdate(100, 50, 100, 30));
+
+        assertFalse(reports.isEmpty());
+        assertEquals("ASK_1", reports.get(0).clientOid);
+        assertEquals(ExecType.FILL, reports.get(0).execType);
+        assertEquals(8, reports.get(0).filledQty);
     }
 }

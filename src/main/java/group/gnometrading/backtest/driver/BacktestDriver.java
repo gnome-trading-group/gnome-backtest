@@ -1,14 +1,16 @@
 package group.gnometrading.backtest.driver;
 
-import group.gnometrading.MarketDataEntry;
 import group.gnometrading.backtest.exchange.BacktestAmendOrder;
 import group.gnometrading.backtest.exchange.BacktestCancelOrder;
 import group.gnometrading.backtest.exchange.BacktestExecutionReport;
 import group.gnometrading.backtest.exchange.BacktestOrder;
 import group.gnometrading.backtest.exchange.SimulatedExchange;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
+import group.gnometrading.data.MarketDataEntry;
+import group.gnometrading.schemas.MessageHeaderDecoder;
 import group.gnometrading.schemas.Schema;
 import group.gnometrading.schemas.SchemaType;
+import java.nio.ByteOrder;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -113,61 +115,61 @@ public final class BacktestDriver {
 
         while (!queue.isEmpty()) {
             BacktestEvent event = queue.peek();
-            if (event.timestamp >= timestamp) {
+            if (event.timestamp() >= timestamp) {
                 break;
             }
             queue.poll();
             eventsProcessed++;
-            lastTimestamp = event.timestamp;
+            lastTimestamp = event.timestamp();
 
             try {
                 processEvent(event);
             } catch (Exception e) {
-                logger.severe("Exception at timestamp " + event.timestamp + ": " + e.getMessage());
+                logger.severe("Exception at timestamp " + event.timestamp() + ": " + e.getMessage());
                 throw e;
             }
         }
     }
 
     private void processEvent(BacktestEvent event) {
-        switch (event.eventType) {
+        switch (event.eventType()) {
             case EXCHANGE_MARKET_DATA -> {
-                Schema schema = (Schema) event.data;
+                Schema schema = (Schema) event.data();
                 SimulatedExchange exchange = getExchange(schema);
                 List<BacktestExecutionReport> reports = exchange.onMarketData(schema);
                 for (BacktestExecutionReport report : reports) {
-                    long deliveryTs = event.timestamp + exchange.simulateNetworkLatency();
-                    report.timestampEvent = event.timestamp;
+                    long deliveryTs = event.timestamp() + exchange.simulateNetworkLatency();
+                    report.timestampEvent = event.timestamp();
                     report.timestampRecv = deliveryTs;
                     queue.add(new BacktestEvent(deliveryTs, EventType.EXCHANGE_MESSAGE, report));
                 }
             }
             case EXCHANGE_MESSAGE -> {
-                BacktestExecutionReport report = (BacktestExecutionReport) event.data;
-                List<LocalMessage> messages = strategy.onExecutionReport(event.timestamp, report);
+                BacktestExecutionReport report = (BacktestExecutionReport) event.data();
+                List<LocalMessage> messages = strategy.onExecutionReport(event.timestamp(), report);
                 if (messages != null) {
                     for (LocalMessage message : messages) {
                         SimulatedExchange exchange = getExchangeForMessage(message);
-                        long deliveryTs = event.timestamp + exchange.simulateNetworkLatency();
+                        long deliveryTs = event.timestamp() + exchange.simulateNetworkLatency();
                         queue.add(new BacktestEvent(deliveryTs, EventType.LOCAL_MESSAGE, message));
                     }
                 }
             }
             case LOCAL_MARKET_DATA -> {
-                Schema schema = (Schema) event.data;
+                Schema schema = (Schema) event.data();
                 if (recorder != null) {
-                    recorder.onMarketData(event.timestamp, schema);
+                    recorder.onMarketData(event.timestamp(), schema);
                 }
-                List<LocalMessage> messages = strategy.onMarketData(event.timestamp, schema);
+                List<LocalMessage> messages = strategy.onMarketData(event.timestamp(), schema);
                 for (LocalMessage message : messages) {
                     SimulatedExchange exchange = getExchangeForMessage(message);
                     long deliveryTs =
-                            event.timestamp + strategy.simulateProcessingTime() + exchange.simulateNetworkLatency();
+                            event.timestamp() + strategy.simulateProcessingTime() + exchange.simulateNetworkLatency();
                     queue.add(new BacktestEvent(deliveryTs, EventType.LOCAL_MESSAGE, message));
                 }
             }
             case LOCAL_MESSAGE -> {
-                LocalMessage message = (LocalMessage) event.data;
+                LocalMessage message = (LocalMessage) event.data();
                 SimulatedExchange exchange = getExchangeForMessage(message);
 
                 List<BacktestExecutionReport> reports;
@@ -182,10 +184,10 @@ public final class BacktestDriver {
                 }
 
                 for (BacktestExecutionReport report : reports) {
-                    long deliveryTs = event.timestamp
+                    long deliveryTs = event.timestamp()
                             + exchange.simulateOrderProcessingTime()
                             + exchange.simulateNetworkLatency();
-                    report.timestampEvent = event.timestamp;
+                    report.timestampEvent = event.timestamp();
                     report.timestampRecv = deliveryTs;
                     setExchangeIds(report, message);
                     queue.add(new BacktestEvent(deliveryTs, EventType.EXCHANGE_MESSAGE, report));
@@ -195,10 +197,13 @@ public final class BacktestDriver {
     }
 
     private SimulatedExchange getExchange(Schema schema) {
-        // Schema base class doesn't expose exchangeId/securityId directly; use schemaType discriminator
-        // This requires subclasses or a helper — for now we use the first available exchange
-        // TODO: extract exchangeId and securityId from the schema buffer directly
-        return exchanges.values().iterator().next().values().iterator().next();
+        // exchangeId and securityId are at consistent offsets across all schema types:
+        // after the 8-byte SBE message header, exchangeId is a 2-byte uint16 at offset 0,
+        // and securityId is a 4-byte uint32 at offset 2.
+        int headerSize = MessageHeaderDecoder.ENCODED_LENGTH;
+        int exchangeId = schema.buffer.getShort(headerSize, ByteOrder.LITTLE_ENDIAN);
+        int securityId = schema.buffer.getInt(headerSize + 2, ByteOrder.LITTLE_ENDIAN);
+        return exchanges.get(exchangeId).get(securityId);
     }
 
     private SimulatedExchange getExchangeForMessage(LocalMessage message) {

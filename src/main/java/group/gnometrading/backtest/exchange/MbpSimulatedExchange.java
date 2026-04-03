@@ -16,6 +16,7 @@ import group.gnometrading.schemas.OrderStatus;
 import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Schema;
 import group.gnometrading.schemas.SchemaType;
+import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.TimeInForce;
 import java.util.ArrayList;
 import java.util.List;
@@ -66,6 +67,13 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
                         order.orderType(),
                         order.timeInForce())
                 : order;
+
+        if (resolvedOrder.size() <= 0 || resolvedOrder.side() == null || resolvedOrder.side() == Side.None) {
+            return List.of(BacktestExecutionReport.rejected(resolvedOrder.clientOid()));
+        }
+        if (resolvedOrder.orderType() == OrderType.LIMIT && resolvedOrder.price() <= 0) {
+            return List.of(BacktestExecutionReport.rejected(resolvedOrder.clientOid()));
+        }
 
         if (resolvedOrder.orderType() == OrderType.MARKET) {
             return handleMarketOrder(resolvedOrder);
@@ -216,7 +224,8 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
                 totalNotional += (double) match.price() * match.size();
             }
 
-            double fee = feeModel.calculateFee(totalNotional, true);
+            // Aggressive limit orders that immediately cross the spread are taking liquidity.
+            double fee = feeModel.calculateFee(totalNotional, false);
             long vwapPrice = (long) (totalNotional / totalFilled);
 
             if (totalFilled == order.size()) {

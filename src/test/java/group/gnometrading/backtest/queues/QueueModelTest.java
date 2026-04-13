@@ -4,12 +4,13 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import group.gnometrading.backtest.book.LocalOrder;
 import group.gnometrading.backtest.book.LocalOrderFill;
-import group.gnometrading.backtest.exchange.BacktestOrder;
+import group.gnometrading.schemas.Order;
 import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.TimeInForce;
 import java.util.ArrayDeque;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -21,16 +22,18 @@ class QueueModelTest {
         public void onModify(long prev, long next, ArrayDeque<LocalOrder> queue) {}
     }
 
-    record LocalOrderSpec(String clientOid, long remaining, long phantomVolume, long cumulativeTradedQuantity) {}
+    static final AtomicLong clientOidCounter = new AtomicLong(0);
 
-    record ExpectedFill(String clientOid, long fillSize) {}
+    record LocalOrderSpec(long remaining, long phantomVolume, long cumulativeTradedQuantity) {}
+
+    record ExpectedFill(long clientOid, long fillSize) {}
 
     record TestCase(
             List<LocalOrderSpec> localOrders,
             long tradeSize,
             List<ExpectedFill> expectedFills,
             List<LocalOrderSpec> expectedState,
-            List<String> expectedDequeClientOids) {}
+            List<Long> expectedDequeClientOids) {}
 
     static Stream<TestCase> testCases() {
         return Stream.of(
@@ -39,117 +42,105 @@ class QueueModelTest {
 
                 // Trade smaller than phantom
                 new TestCase(
-                        List.of(new LocalOrderSpec("A", 10, 7, 0)),
+                        List.of(new LocalOrderSpec(10, 7, 0)),
                         5,
                         List.of(),
-                        List.of(new LocalOrderSpec("A", 10, 2, 5)),
-                        List.of("A")),
+                        List.of(new LocalOrderSpec(10, 2, 5)),
+                        List.of(1L)),
 
                 // Trade exactly phantom
                 new TestCase(
-                        List.of(new LocalOrderSpec("A", 10, 5, 0)),
+                        List.of(new LocalOrderSpec(10, 5, 0)),
                         5,
                         List.of(),
-                        List.of(new LocalOrderSpec("A", 10, 0, 5)),
-                        List.of("A")),
+                        List.of(new LocalOrderSpec(10, 0, 5)),
+                        List.of(1L)),
 
                 // Trade consumes phantom and partial fill
                 new TestCase(
-                        List.of(new LocalOrderSpec("A", 10, 3, 0)),
+                        List.of(new LocalOrderSpec(10, 3, 0)),
                         5,
-                        List.of(new ExpectedFill("A", 2)),
-                        List.of(new LocalOrderSpec("A", 8, -2, 5)),
-                        List.of("A")),
+                        List.of(new ExpectedFill(1L, 2)),
+                        List.of(new LocalOrderSpec(8, -2, 5)),
+                        List.of(1L)),
 
                 // Trade consumes phantom and fills entire order (should be removed)
                 new TestCase(
-                        List.of(new LocalOrderSpec("A", 2, 1, 0)),
+                        List.of(new LocalOrderSpec(2, 1, 0)),
                         5,
-                        List.of(new ExpectedFill("A", 2)),
-                        List.of(new LocalOrderSpec("A", 0, -4, 5)),
+                        List.of(new ExpectedFill(1L, 2)),
+                        List.of(new LocalOrderSpec(0, -4, 5)),
                         List.of()),
 
                 // Trade fills multiple orders, last order partially filled
                 new TestCase(
-                        List.of(
-                                new LocalOrderSpec("A", 2, 1, 0),
-                                new LocalOrderSpec("B", 3, 1, 0),
-                                new LocalOrderSpec("C", 4, 1, 0)),
+                        List.of(new LocalOrderSpec(2, 1, 0), new LocalOrderSpec(3, 1, 0), new LocalOrderSpec(4, 1, 0)),
                         7,
-                        List.of(new ExpectedFill("A", 2), new ExpectedFill("B", 3), new ExpectedFill("C", 1)),
+                        List.of(new ExpectedFill(1L, 2), new ExpectedFill(2L, 3), new ExpectedFill(3L, 1)),
                         List.of(
-                                new LocalOrderSpec("A", 0, -6, 7),
-                                new LocalOrderSpec("B", 0, -6, 7),
-                                new LocalOrderSpec("C", 3, -6, 7)),
-                        List.of("C")),
+                                new LocalOrderSpec(0, -6, 7),
+                                new LocalOrderSpec(0, -6, 7),
+                                new LocalOrderSpec(3, -6, 7)),
+                        List.of(3L)),
 
                 // Trade larger than all orders (all removed)
                 new TestCase(
-                        List.of(new LocalOrderSpec("A", 2, 1, 0), new LocalOrderSpec("B", 3, 0, 0)),
+                        List.of(new LocalOrderSpec(2, 1, 0), new LocalOrderSpec(3, 0, 0)),
                         10,
-                        List.of(new ExpectedFill("A", 2), new ExpectedFill("B", 3)),
-                        List.of(new LocalOrderSpec("A", 0, -9, 10), new LocalOrderSpec("B", 0, -10, 10)),
+                        List.of(new ExpectedFill(1L, 2), new ExpectedFill(2L, 3)),
+                        List.of(new LocalOrderSpec(0, -9, 10), new LocalOrderSpec(0, -10, 10)),
                         List.of()),
 
                 // Trade with zero phantom, partial fill
                 new TestCase(
-                        List.of(new LocalOrderSpec("A", 5, 0, 0)),
+                        List.of(new LocalOrderSpec(5, 0, 0)),
                         3,
-                        List.of(new ExpectedFill("A", 3)),
-                        List.of(new LocalOrderSpec("A", 2, -3, 3)),
-                        List.of("A")),
+                        List.of(new ExpectedFill(1L, 3)),
+                        List.of(new LocalOrderSpec(2, -3, 3)),
+                        List.of(1L)),
 
                 // Trade with zero phantom, full fill
                 new TestCase(
-                        List.of(new LocalOrderSpec("A", 3, 0, 0)),
+                        List.of(new LocalOrderSpec(3, 0, 0)),
                         3,
-                        List.of(new ExpectedFill("A", 3)),
-                        List.of(new LocalOrderSpec("A", 0, -3, 3)),
+                        List.of(new ExpectedFill(1L, 3)),
+                        List.of(new LocalOrderSpec(0, -3, 3)),
                         List.of()),
 
                 // Trade with negative phantom, partial fill
                 new TestCase(
-                        List.of(new LocalOrderSpec("A", 5, -2, 0)),
+                        List.of(new LocalOrderSpec(5, -2, 0)),
                         3,
-                        List.of(new ExpectedFill("A", 3)),
-                        List.of(new LocalOrderSpec("A", 2, -5, 3)),
-                        List.of("A")),
+                        List.of(new ExpectedFill(1L, 3)),
+                        List.of(new LocalOrderSpec(2, -5, 3)),
+                        List.of(1L)),
 
                 // Trade with negative phantom, full fill
                 new TestCase(
-                        List.of(new LocalOrderSpec("A", 3, -2, 0)),
+                        List.of(new LocalOrderSpec(3, -2, 0)),
                         3,
-                        List.of(new ExpectedFill("A", 3)),
-                        List.of(new LocalOrderSpec("A", 0, -5, 3)),
+                        List.of(new ExpectedFill(1L, 3)),
+                        List.of(new LocalOrderSpec(0, -5, 3)),
                         List.of()),
 
                 // Three orders, all removed
                 new TestCase(
-                        List.of(
-                                new LocalOrderSpec("A", 2, 1, 0),
-                                new LocalOrderSpec("B", 3, 0, 0),
-                                new LocalOrderSpec("C", 4, 0, 0)),
+                        List.of(new LocalOrderSpec(2, 1, 0), new LocalOrderSpec(3, 0, 0), new LocalOrderSpec(4, 0, 0)),
                         20,
-                        List.of(new ExpectedFill("A", 2), new ExpectedFill("B", 3), new ExpectedFill("C", 4)),
+                        List.of(new ExpectedFill(1L, 2), new ExpectedFill(2L, 3), new ExpectedFill(3L, 4)),
                         List.of(
-                                new LocalOrderSpec("A", 0, -19, 20),
-                                new LocalOrderSpec("B", 0, -20, 20),
-                                new LocalOrderSpec("C", 0, -20, 20)),
+                                new LocalOrderSpec(0, -19, 20),
+                                new LocalOrderSpec(0, -20, 20),
+                                new LocalOrderSpec(0, -20, 20)),
                         List.of()),
 
                 // Three orders, only first filled (others still have phantom)
                 new TestCase(
-                        List.of(
-                                new LocalOrderSpec("A", 2, 1, 0),
-                                new LocalOrderSpec("B", 3, 5, 0),
-                                new LocalOrderSpec("C", 4, 5, 0)),
+                        List.of(new LocalOrderSpec(2, 1, 0), new LocalOrderSpec(3, 5, 0), new LocalOrderSpec(4, 5, 0)),
                         3,
-                        List.of(new ExpectedFill("A", 2)),
-                        List.of(
-                                new LocalOrderSpec("A", 0, -2, 3),
-                                new LocalOrderSpec("B", 3, 2, 3),
-                                new LocalOrderSpec("C", 4, 2, 3)),
-                        List.of("B", "C")));
+                        List.of(new ExpectedFill(1L, 2)),
+                        List.of(new LocalOrderSpec(0, -2, 3), new LocalOrderSpec(3, 2, 3), new LocalOrderSpec(4, 2, 3)),
+                        List.of(2L, 3L)));
     }
 
     @ParameterizedTest
@@ -157,22 +148,26 @@ class QueueModelTest {
     void testOnTrade(TestCase tc) {
         DummyQueueModel model = new DummyQueueModel();
         ArrayDeque<LocalOrder> deque = new ArrayDeque<>();
-        List<LocalOrder> orders = tc.localOrders().stream()
-                .map(spec -> {
-                    BacktestOrder order = new BacktestOrder(
-                            1,
-                            1,
-                            spec.clientOid(),
-                            Side.Bid,
-                            10000L,
-                            10L,
-                            OrderType.LIMIT,
-                            TimeInForce.GOOD_TILL_CANCELED);
-                    LocalOrder lo = new LocalOrder(order, spec.remaining(), spec.phantomVolume());
-                    lo.cumulativeTradedQuantity = spec.cumulativeTradedQuantity();
-                    return lo;
-                })
-                .toList();
+        long[] clientOids = new long[tc.localOrders().size()];
+        List<LocalOrder> orders = new java.util.ArrayList<>();
+        for (int i = 0; i < tc.localOrders().size(); i++) {
+            LocalOrderSpec spec = tc.localOrders().get(i);
+            long oid = i + 1L;
+            clientOids[i] = oid;
+            Order order = new Order();
+            order.encoder
+                    .exchangeId((short) 1)
+                    .securityId(1)
+                    .price(10000L)
+                    .size(10L)
+                    .side(Side.Bid)
+                    .orderType(OrderType.LIMIT)
+                    .timeInForce(TimeInForce.GOOD_TILL_CANCELED);
+            order.encodeClientOid(oid, 0);
+            LocalOrder lo = new LocalOrder(order, spec.remaining(), spec.phantomVolume());
+            lo.cumulativeTradedQuantity = spec.cumulativeTradedQuantity();
+            orders.add(lo);
+        }
 
         orders.forEach(deque::addLast);
 
@@ -183,7 +178,8 @@ class QueueModelTest {
         for (int i = 0; i < tc.expectedFills().size(); i++) {
             ExpectedFill expected = tc.expectedFills().get(i);
             LocalOrderFill actual = fills.get(i);
-            assertEquals(expected.clientOid(), actual.localOrder().order.clientOid(), "Fill clientOid[" + i + "]");
+            assertEquals(
+                    expected.clientOid(), actual.localOrder().order.getClientOidCounter(), "Fill clientOid[" + i + "]");
             assertEquals(expected.fillSize(), actual.fillSize(), "Fill size[" + i + "]");
         }
 
@@ -191,17 +187,17 @@ class QueueModelTest {
         for (int i = 0; i < tc.expectedState().size(); i++) {
             LocalOrderSpec expected = tc.expectedState().get(i);
             LocalOrder actual = orders.get(i);
-            assertEquals(expected.remaining(), actual.remaining, "remaining for " + actual.order.clientOid());
-            assertEquals(
-                    expected.phantomVolume(), actual.phantomVolume, "phantomVolume for " + actual.order.clientOid());
+            assertEquals(expected.remaining(), actual.remaining, "remaining for order " + i);
+            assertEquals(expected.phantomVolume(), actual.phantomVolume, "phantomVolume for order " + i);
             assertEquals(
                     expected.cumulativeTradedQuantity(),
                     actual.cumulativeTradedQuantity,
-                    "cumulativeTradedQuantity for " + actual.order.clientOid());
+                    "cumulativeTradedQuantity for order " + i);
         }
 
         // Verify deque contents
-        List<String> dequeOids = deque.stream().map(lo -> lo.order.clientOid()).toList();
+        List<Long> dequeOids =
+                deque.stream().map(lo -> lo.order.getClientOidCounter()).toList();
         assertEquals(tc.expectedDequeClientOids(), dequeOids, "Deque client OIDs");
     }
 }

@@ -1,15 +1,15 @@
 package group.gnometrading.backtest.driver;
 
-import group.gnometrading.backtest.exchange.BacktestAmendOrder;
-import group.gnometrading.backtest.exchange.BacktestCancelOrder;
-import group.gnometrading.backtest.exchange.BacktestOrder;
+import group.gnometrading.schemas.CancelOrder;
+import group.gnometrading.schemas.ModifyOrder;
+import group.gnometrading.schemas.Order;
 
 public sealed interface LocalMessage
-        permits LocalMessage.OrderMessage, LocalMessage.CancelOrderMessage, LocalMessage.AmendOrderMessage {
+        permits LocalMessage.OrderMessage, LocalMessage.CancelOrderMessage, LocalMessage.ModifyOrderMessage {
 
-    record OrderMessage(BacktestOrder order) implements LocalMessage {}
+    record OrderMessage(Order order) implements LocalMessage {}
 
-    record CancelOrderMessage(BacktestCancelOrder cancelOrder) implements LocalMessage {}
+    record CancelOrderMessage(CancelOrder cancelOrder) implements LocalMessage {}
 
-    record AmendOrderMessage(BacktestAmendOrder amendOrder) implements LocalMessage {}
+    record ModifyOrderMessage(ModifyOrder modifyOrder) implements LocalMessage {}
 }

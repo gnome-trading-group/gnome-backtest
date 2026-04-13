@@ -9,14 +9,20 @@ import group.gnometrading.backtest.fee.FeeModel;
 import group.gnometrading.backtest.latency.LatencyModel;
 import group.gnometrading.backtest.queues.QueueModel;
 import group.gnometrading.schemas.Action;
+import group.gnometrading.schemas.CancelOrder;
 import group.gnometrading.schemas.ExecType;
+import group.gnometrading.schemas.Mbp10Decoder;
 import group.gnometrading.schemas.Mbp10Schema;
 import group.gnometrading.schemas.Mbp1Schema;
+import group.gnometrading.schemas.ModifyOrder;
+import group.gnometrading.schemas.Order;
+import group.gnometrading.schemas.OrderExecutionReport;
 import group.gnometrading.schemas.OrderStatus;
 import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Schema;
 import group.gnometrading.schemas.SchemaType;
 import group.gnometrading.schemas.Side;
+import group.gnometrading.schemas.Statics;
 import group.gnometrading.schemas.TimeInForce;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,8 +30,8 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public final class MbpSimulatedExchange implements SimulatedExchange {
 
-    private static final long PRICE_NULL = Long.MIN_VALUE;
-    private static final long SIZE_NULL = 4294967295L;
+    private static final long PRICE_NULL = Mbp10Decoder.priceNullValue();
+    private static final long SIZE_NULL = Mbp10Decoder.sizeNullValue();
 
     private final FeeModel feeModel;
     private final LatencyModel networkLatency;
@@ -45,7 +51,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
     }
 
     @Override
-    public List<BacktestExecutionReport> onMarketData(Schema data) {
+    public List<OrderExecutionReport> onMarketData(Schema data) {
         if (data instanceof Mbp10Schema mbp10) {
             return onMbp10(mbp10);
         } else if (data instanceof Mbp1Schema mbp1) {
@@ -55,52 +61,63 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
     }
 
     @Override
-    public List<BacktestExecutionReport> submitOrder(BacktestOrder order) {
-        BacktestOrder resolvedOrder = order.clientOid() == null
-                ? new BacktestOrder(
-                        order.exchangeId(),
-                        order.securityId(),
-                        generateClientOid(),
-                        order.side(),
-                        order.price(),
-                        order.size(),
-                        order.orderType(),
-                        order.timeInForce())
-                : order;
+    public List<OrderExecutionReport> submitOrder(Order order) {
+        long clientOid = order.getClientOidCounter();
+        int strategyId = order.getClientOidStrategyId();
 
-        if (resolvedOrder.size() <= 0 || resolvedOrder.side() == null || resolvedOrder.side() == Side.None) {
-            return List.of(BacktestExecutionReport.rejected(resolvedOrder.clientOid()));
-        }
-        if (resolvedOrder.orderType() == OrderType.LIMIT && resolvedOrder.price() <= 0) {
-            return List.of(BacktestExecutionReport.rejected(resolvedOrder.clientOid()));
+        // Auto-generate clientOid if not set (counter == 0 indicates unset)
+        if (clientOid == 0) {
+            clientOid = orderCounter.incrementAndGet();
+            order.encodeClientOid(clientOid, strategyId);
         }
 
-        if (resolvedOrder.orderType() == OrderType.MARKET) {
-            return handleMarketOrder(resolvedOrder);
-        } else if (resolvedOrder.orderType() == OrderType.LIMIT) {
-            return handleLimitOrder(resolvedOrder);
+        long size = order.decoder.size();
+        Side side = order.decoder.side();
+
+        if (size <= 0 || side == null || side == Side.None) {
+            return List.of(rejected(order));
         }
-        throw new IllegalArgumentException("Unexpected order type: " + resolvedOrder.orderType());
+        if (order.decoder.orderType() == OrderType.LIMIT && order.decoder.price() <= 0) {
+            return List.of(rejected(order));
+        }
+
+        if (order.decoder.orderType() == OrderType.MARKET) {
+            return handleMarketOrder(order);
+        } else if (order.decoder.orderType() == OrderType.LIMIT) {
+            return handleLimitOrder(order);
+        }
+        throw new IllegalArgumentException("Unexpected order type: " + order.decoder.orderType());
     }
 
     @Override
-    public List<BacktestExecutionReport> cancelOrder(BacktestCancelOrder cancel) {
-        if (orderBook.cancelOrder(cancel.clientOid())) {
-            return List.of(BacktestExecutionReport.canceled(cancel.clientOid()));
+    public List<OrderExecutionReport> cancelOrder(CancelOrder cancel) {
+        long clientOid = cancel.getClientOidCounter();
+        if (orderBook.cancelOrder(clientOid)) {
+            return List.of(canceled(cancel));
         }
-        return List.of(BacktestExecutionReport.rejected(cancel.clientOid()));
+        return List.of(rejected(cancel));
     }
 
     @Override
-    public List<BacktestExecutionReport> amendOrder(BacktestAmendOrder amend) {
-        if (orderBook.amendLocalOrder(amend.clientOid(), amend.newPrice(), amend.newSize())) {
-            BacktestExecutionReport report = new BacktestExecutionReport(
-                    amend.clientOid(), ExecType.NEW, OrderStatus.NEW, 0, 0, 0, amend.newSize(), 0.0);
-            report.exchangeId = amend.exchangeId();
-            report.securityId = amend.securityId();
+    public List<OrderExecutionReport> modifyOrder(ModifyOrder modify) {
+        long clientOid = modify.getClientOidCounter();
+        long newPrice = modify.decoder.price();
+        long newSize = modify.decoder.size();
+        if (orderBook.modifyLocalOrder(clientOid, newPrice, newSize)) {
+            OrderExecutionReport report = makeReport(
+                    modify.getClientOidCounter(),
+                    modify.getClientOidStrategyId(),
+                    ExecType.NEW,
+                    OrderStatus.NEW,
+                    0,
+                    0,
+                    0,
+                    newSize,
+                    0);
+            report.encoder.exchangeId((short) modify.decoder.exchangeId()).securityId(modify.decoder.securityId());
             return List.of(report);
         }
-        return List.of(BacktestExecutionReport.rejected(amend.clientOid()));
+        return List.of(rejected(modify));
     }
 
     @Override
@@ -118,7 +135,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         return List.of(SchemaType.MBP_10, SchemaType.MBP_1);
     }
 
-    private List<BacktestExecutionReport> onMbp10(Mbp10Schema schema) {
+    private List<OrderExecutionReport> onMbp10(Mbp10Schema schema) {
         Action action = schema.decoder.action();
         if (action == Action.Add || action == Action.Cancel || action == Action.Modify) {
             List<BidAskLevel> levels = extractMbp10Levels(schema);
@@ -134,7 +151,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         return List.of();
     }
 
-    private List<BacktestExecutionReport> onMbp1(Mbp1Schema schema) {
+    private List<OrderExecutionReport> onMbp1(Mbp1Schema schema) {
         Action action = schema.decoder.action();
         if (action == Action.Add || action == Action.Cancel || action == Action.Modify) {
             List<BidAskLevel> levels = extractMbp1Levels(schema);
@@ -150,40 +167,43 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         return List.of();
     }
 
-    private List<BacktestExecutionReport> mapFillsToReports(List<LocalOrderFill> fills) {
-        List<BacktestExecutionReport> reports = new ArrayList<>(fills.size());
+    private List<OrderExecutionReport> mapFillsToReports(List<LocalOrderFill> fills) {
+        List<OrderExecutionReport> reports = new ArrayList<>(fills.size());
         for (LocalOrderFill fill : fills) {
             reports.add(mapFillToReport(fill.localOrder(), fill.fillSize()));
         }
         return reports;
     }
 
-    private BacktestExecutionReport mapFillToReport(LocalOrder localOrder, long filledQty) {
+    private OrderExecutionReport mapFillToReport(LocalOrder localOrder, long filledQty) {
+        long price = localOrder.order.decoder.price();
         // Use double to avoid overflow: price (~9e13) * size (~1e6) = ~9e19 exceeds Long.MAX_VALUE
-        double notional = (double) filledQty * localOrder.order.price();
-        double fee = feeModel.calculateFee(notional, true);
-        long fillPrice = localOrder.order.price();
-        long cumulativeQty = localOrder.order.size() - localOrder.remaining;
+        double notional = (double) filledQty * price;
+        long cumulativeQty = localOrder.order.decoder.size() - localOrder.remaining;
 
-        var report = new BacktestExecutionReport(
-                localOrder.order.clientOid(),
-                localOrder.remaining == 0 ? ExecType.FILL : ExecType.PARTIAL_FILL,
-                localOrder.remaining == 0 ? OrderStatus.FILLED : OrderStatus.PARTIALLY_FILLED,
+        ExecType execType = localOrder.remaining == 0 ? ExecType.FILL : ExecType.PARTIAL_FILL;
+        OrderStatus orderStatus = localOrder.remaining == 0 ? OrderStatus.FILLED : OrderStatus.PARTIALLY_FILLED;
+
+        OrderExecutionReport report = makeReport(
+                localOrder.order.getClientOidCounter(),
+                localOrder.order.getClientOidStrategyId(),
+                execType,
+                orderStatus,
                 filledQty,
-                fillPrice,
+                price,
                 cumulativeQty,
                 localOrder.remaining,
-                fee);
-        report.exchangeId = localOrder.order.exchangeId();
-        report.securityId = localOrder.order.securityId();
-        report.side = localOrder.order.side();
+                toScaledFee(feeModel.calculateFee(notional, true)));
+        report.encoder
+                .exchangeId((short) localOrder.order.decoder.exchangeId())
+                .securityId(localOrder.order.decoder.securityId());
         return report;
     }
 
-    private List<BacktestExecutionReport> handleMarketOrder(BacktestOrder order) {
+    private List<OrderExecutionReport> handleMarketOrder(Order order) {
         List<OrderMatch> matches = orderBook.getMatchingOrders(order);
         if (matches.isEmpty()) {
-            return List.of(BacktestExecutionReport.rejected(order.clientOid()));
+            return List.of(rejected(order));
         }
 
         long totalFilled = 0;
@@ -193,28 +213,36 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
             totalNotional += (double) match.price() * match.size();
         }
 
-        double fee = feeModel.calculateFee(totalNotional, false);
         long vwapPrice = totalFilled > 0 ? (long) (totalNotional / totalFilled) : 0;
+        long orderSize = order.decoder.size();
 
-        if (totalFilled == order.size()) {
-            return List.of(new BacktestExecutionReport(
-                    order.clientOid(), ExecType.FILL, OrderStatus.FILLED, totalFilled, vwapPrice, totalFilled, 0, fee));
-        } else {
-            return List.of(new BacktestExecutionReport(
-                    order.clientOid(),
-                    ExecType.PARTIAL_FILL,
-                    OrderStatus.PARTIALLY_FILLED,
-                    totalFilled,
-                    vwapPrice,
-                    totalFilled,
-                    order.size() - totalFilled,
-                    fee));
-        }
+        ExecType execType = totalFilled == orderSize ? ExecType.FILL : ExecType.PARTIAL_FILL;
+        OrderStatus status = totalFilled == orderSize ? OrderStatus.FILLED : OrderStatus.PARTIALLY_FILLED;
+        long remaining = orderSize - totalFilled;
+
+        OrderExecutionReport report = makeReport(
+                order.getClientOidCounter(),
+                order.getClientOidStrategyId(),
+                execType,
+                status,
+                totalFilled,
+                vwapPrice,
+                totalFilled,
+                remaining,
+                toScaledFee(feeModel.calculateFee(totalNotional, false)));
+        report.encoder.exchangeId((short) order.decoder.exchangeId()).securityId(order.decoder.securityId());
+        return List.of(report);
     }
 
-    private List<BacktestExecutionReport> handleLimitOrder(BacktestOrder order) {
+    private List<OrderExecutionReport> handleLimitOrder(Order order) {
         List<OrderMatch> matches = orderBook.getMatchingOrders(order);
-        List<BacktestExecutionReport> reports = new ArrayList<>();
+        List<OrderExecutionReport> reports = new ArrayList<>();
+
+        long orderSize = order.decoder.size();
+        int exchangeId = order.decoder.exchangeId();
+        long securityId = order.decoder.securityId();
+        long clientOid = order.getClientOidCounter();
+        int strategyId = order.getClientOidStrategyId();
 
         if (!matches.isEmpty()) {
             long totalFilled = 0;
@@ -225,66 +253,162 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
             }
 
             // Aggressive limit orders that immediately cross the spread are taking liquidity.
-            double fee = feeModel.calculateFee(totalNotional, false);
+            long feeScaled = toScaledFee(feeModel.calculateFee(totalNotional, false));
             long vwapPrice = (long) (totalNotional / totalFilled);
+            long remaining = orderSize - totalFilled;
 
-            if (totalFilled == order.size()) {
-                return List.of(new BacktestExecutionReport(
-                        order.clientOid(),
+            if (totalFilled == orderSize) {
+                OrderExecutionReport report = makeReport(
+                        clientOid,
+                        strategyId,
                         ExecType.FILL,
                         OrderStatus.FILLED,
                         totalFilled,
                         vwapPrice,
                         totalFilled,
                         0,
-                        fee));
+                        feeScaled);
+                report.encoder.exchangeId((short) exchangeId).securityId(securityId);
+                return List.of(report);
             }
 
-            // Partial immediate fill
-            BacktestExecutionReport partialFill = new BacktestExecutionReport(
-                    order.clientOid(),
+            OrderExecutionReport partialFill = makeReport(
+                    clientOid,
+                    strategyId,
                     ExecType.PARTIAL_FILL,
                     OrderStatus.PARTIALLY_FILLED,
                     totalFilled,
                     vwapPrice,
                     totalFilled,
-                    order.size() - totalFilled,
-                    fee);
+                    remaining,
+                    feeScaled);
+            partialFill.encoder.exchangeId((short) exchangeId).securityId(securityId);
 
-            if (order.timeInForce() == TimeInForce.FILL_OR_KILL) {
-                return List.of(BacktestExecutionReport.rejected(order.clientOid()));
-            } else if (order.timeInForce() == TimeInForce.IMMEDIATE_OR_CANCELED) {
-                return List.of(
-                        partialFill,
-                        new BacktestExecutionReport(
-                                order.clientOid(),
-                                ExecType.CANCEL,
-                                OrderStatus.PARTIALLY_FILLED,
-                                0,
-                                0,
-                                totalFilled,
-                                0,
-                                fee));
+            if (order.decoder.timeInForce() == TimeInForce.FILL_OR_KILL) {
+                return List.of(rejected(order));
+            } else if (order.decoder.timeInForce() == TimeInForce.IMMEDIATE_OR_CANCELED) {
+                OrderExecutionReport cancel = makeReport(
+                        clientOid,
+                        strategyId,
+                        ExecType.CANCEL,
+                        OrderStatus.PARTIALLY_FILLED,
+                        0,
+                        0,
+                        totalFilled,
+                        0,
+                        feeScaled);
+                cancel.encoder.exchangeId((short) exchangeId).securityId(securityId);
+                return List.of(partialFill, cancel);
             } else {
-                long remaining = order.size() - totalFilled;
                 orderBook.addLocalOrder(order, remaining);
-                reports.add(BacktestExecutionReport.newOrder(order.clientOid(), order.size()));
+                OrderExecutionReport newAck =
+                        makeReport(clientOid, strategyId, ExecType.NEW, OrderStatus.NEW, 0, 0, 0, orderSize, 0);
+                newAck.encoder.exchangeId((short) exchangeId).securityId(securityId);
+                reports.add(newAck);
                 reports.add(partialFill);
                 return reports;
             }
         } else {
             // No immediate fill
-            if (order.timeInForce() == TimeInForce.IMMEDIATE_OR_CANCELED
-                    || order.timeInForce() == TimeInForce.FILL_OR_KILL) {
-                return List.of(BacktestExecutionReport.rejected(order.clientOid()));
+            if (order.decoder.timeInForce() == TimeInForce.IMMEDIATE_OR_CANCELED
+                    || order.decoder.timeInForce() == TimeInForce.FILL_OR_KILL) {
+                return List.of(rejected(order));
             }
             orderBook.addLocalOrder(order);
-            return List.of(BacktestExecutionReport.newOrder(order.clientOid(), order.size()));
+            OrderExecutionReport newAck =
+                    makeReport(clientOid, strategyId, ExecType.NEW, OrderStatus.NEW, 0, 0, 0, orderSize, 0);
+            newAck.encoder.exchangeId((short) exchangeId).securityId(securityId);
+            return List.of(newAck);
         }
     }
 
-    private String generateClientOid() {
-        return "client_" + orderCounter.incrementAndGet() + "_" + System.nanoTime();
+    // --- Factory helpers ---
+
+    private static long toScaledFee(double fee) {
+        return (long) (fee * Statics.PRICE_SCALING_FACTOR);
+    }
+
+    private OrderExecutionReport makeReport(
+            long clientOid,
+            int strategyId,
+            ExecType execType,
+            OrderStatus orderStatus,
+            long filledQty,
+            long fillPrice,
+            long cumulativeQty,
+            long leavesQty,
+            long feeScaled) {
+        OrderExecutionReport report = new OrderExecutionReport();
+        report.encodeClientOid(clientOid, strategyId);
+        report.encoder
+                .execType(execType)
+                .orderStatus(orderStatus)
+                .filledQty((int) filledQty)
+                .fillPrice(fillPrice)
+                .cumulativeQty((int) cumulativeQty)
+                .leavesQty((int) leavesQty)
+                .fee(feeScaled);
+        return report;
+    }
+
+    private OrderExecutionReport rejected(Order order) {
+        OrderExecutionReport report = makeReport(
+                order.getClientOidCounter(),
+                order.getClientOidStrategyId(),
+                ExecType.REJECT,
+                OrderStatus.REJECTED,
+                0,
+                0,
+                0,
+                0,
+                0);
+        report.encoder.exchangeId((short) order.decoder.exchangeId()).securityId(order.decoder.securityId());
+        return report;
+    }
+
+    private OrderExecutionReport rejected(CancelOrder cancel) {
+        OrderExecutionReport report = makeReport(
+                cancel.getClientOidCounter(),
+                cancel.getClientOidStrategyId(),
+                ExecType.REJECT,
+                OrderStatus.REJECTED,
+                0,
+                0,
+                0,
+                0,
+                0);
+        report.encoder.exchangeId((short) cancel.decoder.exchangeId()).securityId(cancel.decoder.securityId());
+        return report;
+    }
+
+    private OrderExecutionReport rejected(ModifyOrder modify) {
+        OrderExecutionReport report = makeReport(
+                modify.getClientOidCounter(),
+                modify.getClientOidStrategyId(),
+                ExecType.REJECT,
+                OrderStatus.REJECTED,
+                0,
+                0,
+                0,
+                0,
+                0);
+        report.encoder.exchangeId((short) modify.decoder.exchangeId()).securityId(modify.decoder.securityId());
+        return report;
+    }
+
+    private OrderExecutionReport canceled(CancelOrder cancel) {
+        OrderExecutionReport report = makeReport(
+                cancel.getClientOidCounter(),
+                cancel.getClientOidStrategyId(),
+                ExecType.CANCEL,
+                OrderStatus.CANCELED,
+                0,
+                0,
+                0,
+                0,
+                0);
+        report.encoder.exchangeId((short) cancel.decoder.exchangeId()).securityId(cancel.decoder.securityId());
+        return report;
     }
 
     private List<BidAskLevel> extractMbp10Levels(Mbp10Schema schema) {

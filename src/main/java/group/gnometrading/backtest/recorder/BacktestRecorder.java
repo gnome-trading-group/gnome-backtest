@@ -1,16 +1,19 @@
 package group.gnometrading.backtest.recorder;
 
-import group.gnometrading.backtest.exchange.BacktestExecutionReport;
-import group.gnometrading.oms.intent.Intent;
 import group.gnometrading.schemas.Bbo1mSchema;
 import group.gnometrading.schemas.Bbo1sSchema;
+import group.gnometrading.schemas.Intent;
+import group.gnometrading.schemas.IntentDecoder;
 import group.gnometrading.schemas.MboSchema;
 import group.gnometrading.schemas.Mbp10Schema;
 import group.gnometrading.schemas.Mbp1Schema;
 import group.gnometrading.schemas.Ohlcv1hSchema;
 import group.gnometrading.schemas.Ohlcv1mSchema;
 import group.gnometrading.schemas.Ohlcv1sSchema;
+import group.gnometrading.schemas.OrderExecutionReport;
 import group.gnometrading.schemas.Schema;
+import group.gnometrading.schemas.Side;
+import group.gnometrading.schemas.Statics;
 import group.gnometrading.schemas.TradesSchema;
 import java.util.Arrays;
 
@@ -95,24 +98,24 @@ public final class BacktestRecorder {
     // --- Execution report recording ---
 
     public void onExecutionReport(
-            long timestamp, BacktestExecutionReport report, int strategyId, long orderPrice, long orderSize) {
+            long timestamp, OrderExecutionReport report, int strategyId, Side side, long orderPrice, long orderSize) {
         if (execCount == execTimestampEvent.length) {
             growExecArrays();
         }
         int idx = execCount++;
-        execTimestampEvent[idx] = report.timestampEvent;
-        execTimestampRecv[idx] = report.timestampRecv;
-        execExchangeId[idx] = report.exchangeId;
-        execSecurityId[idx] = report.securityId;
+        execTimestampEvent[idx] = report.decoder.timestampEvent();
+        execTimestampRecv[idx] = report.decoder.timestampRecv();
+        execExchangeId[idx] = report.decoder.exchangeId();
+        execSecurityId[idx] = (int) report.decoder.securityId();
         execStrategyId[idx] = strategyId;
-        execClientOid[idx] = report.clientOid;
-        execSide[idx] = report.side.name();
-        execExecType[idx] = report.execType.name();
-        execFilledQty[idx] = report.filledQty;
-        execFillPrice[idx] = report.fillPrice;
+        execClientOid[idx] = String.valueOf(report.getClientOidCounter());
+        execSide[idx] = side != null ? side.name() : Side.None.name();
+        execExecType[idx] = report.decoder.execType().name();
+        execFilledQty[idx] = report.decoder.filledQty();
+        execFillPrice[idx] = report.decoder.fillPrice();
         execOrderPrice[idx] = orderPrice;
         execOrderSize[idx] = orderSize;
-        execFee[idx] = report.fee;
+        execFee[idx] = report.decoder.fee() / (double) Statics.PRICE_SCALING_FACTOR;
     }
 
     // --- Intent recording ---
@@ -123,16 +126,23 @@ public final class BacktestRecorder {
         }
         int idx = intentCount++;
         intentTimestamp[idx] = timestamp;
-        intentExchangeId[idx] = intent.getExchangeId();
-        intentSecurityId[idx] = intent.getSecurityId();
-        intentStrategyId[idx] = intent.getStrategyId();
-        intentBidPrice[idx] = intent.getBidPrice();
-        intentBidSize[idx] = intent.getBidSize();
-        intentAskPrice[idx] = intent.getAskPrice();
-        intentAskSize[idx] = intent.getAskSize();
-        intentTakeSide[idx] = intent.hasTake() ? intent.getTakeSide().name() : null;
-        intentTakeSize[idx] = intent.getTakeSize();
-        intentTakeLimitPrice[idx] = intent.getTakeLimitPrice();
+        intentExchangeId[idx] = intent.decoder.exchangeId();
+        intentSecurityId[idx] = intent.decoder.securityId();
+        intentStrategyId[idx] = intent.decoder.strategyId();
+        long bidPrice = intent.decoder.bidPrice();
+        intentBidPrice[idx] = bidPrice == IntentDecoder.bidPriceNullValue() ? 0 : bidPrice;
+        long bidSize = intent.decoder.bidSize();
+        intentBidSize[idx] = bidSize == IntentDecoder.bidSizeNullValue() ? 0 : bidSize;
+        long askPrice = intent.decoder.askPrice();
+        intentAskPrice[idx] = askPrice == IntentDecoder.askPriceNullValue() ? 0 : askPrice;
+        long askSize = intent.decoder.askSize();
+        intentAskSize[idx] = askSize == IntentDecoder.askSizeNullValue() ? 0 : askSize;
+        long takeSize = intent.decoder.takeSize();
+        boolean hasTake = takeSize != IntentDecoder.takeSizeNullValue() && takeSize > 0;
+        intentTakeSide[idx] = hasTake ? intent.decoder.takeSide().name() : null;
+        intentTakeSize[idx] = hasTake ? takeSize : 0;
+        long takeLimitPrice = intent.decoder.takeLimitPrice();
+        intentTakeLimitPrice[idx] = takeLimitPrice == IntentDecoder.takeLimitPriceNullValue() ? 0 : takeLimitPrice;
     }
 
     // --- Counts ---

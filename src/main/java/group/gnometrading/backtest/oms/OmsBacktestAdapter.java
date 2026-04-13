@@ -1,37 +1,49 @@
 package group.gnometrading.backtest.oms;
 
 import group.gnometrading.backtest.driver.LocalMessage;
-import group.gnometrading.backtest.exchange.BacktestAmendOrder;
-import group.gnometrading.backtest.exchange.BacktestCancelOrder;
-import group.gnometrading.backtest.exchange.BacktestExecutionReport;
-import group.gnometrading.backtest.exchange.BacktestOrder;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
+import group.gnometrading.oms.OmsAgent;
 import group.gnometrading.oms.OrderManagementSystem;
-import group.gnometrading.oms.intent.Intent;
-import group.gnometrading.oms.intent.OmsAction;
-import group.gnometrading.oms.order.OmsCancelOrder;
-import group.gnometrading.oms.order.OmsExecutionReport;
-import group.gnometrading.oms.order.OmsOrder;
-import group.gnometrading.oms.order.OmsReplaceOrder;
 import group.gnometrading.oms.state.TrackedOrder;
+import group.gnometrading.schemas.CancelOrderDecoder;
+import group.gnometrading.schemas.Intent;
+import group.gnometrading.schemas.ModifyOrderDecoder;
+import group.gnometrading.schemas.OrderDecoder;
+import group.gnometrading.schemas.OrderExecutionReport;
+import group.gnometrading.schemas.Side;
+import group.gnometrading.sequencer.GlobalSequence;
+import group.gnometrading.sequencer.SequencedRingBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Bridges the OMS intent system to BacktestDriver's LocalMessage format.
+ * Bridges the OMS agent loop to BacktestDriver's LocalMessage format.
  *
- * Handles both directions:
- *   - Intents → OMS → approved actions → LocalMessage (for simulated exchange)
- *   - BacktestExecutionReport → OmsExecutionReport (for OMS fill processing)
- *
- * Optionally records intents and execution reports to a BacktestRecorder.
+ * <p>Writes intents and execution reports to the OMS agent's inbound ring buffers,
+ * steps {@link OmsAgent#doWork()} to process them, then drains the outbound ring buffer
+ * to produce {@link LocalMessage} objects for the simulated exchange.
  */
 public final class OmsBacktestAdapter {
 
+    private final OmsAgent omsAgent;
     private final OrderManagementSystem oms;
     private final BacktestRecorder recorder;
-    private final List<LocalMessage> buffer = new ArrayList<>();
-    private final OmsExecutionReport omsReport = new OmsExecutionReport();
+    private final List<LocalMessage> messageBuffer = new ArrayList<>();
+
+    // Ring buffers shared between this adapter and the OmsAgent
+    private final SequencedRingBuffer<Intent> intentBuffer;
+    private final SequencedRingBuffer<OrderExecutionReport> execReportBuffer;
+    private final SequencedRingBuffer<Intent> outboundBuffer;
+
+    // Poller for draining the outbound ring buffer
+    private final group.gnometrading.sequencer.SequencedPoller outboundPoller;
+
+    // Pre-allocated decoders for reading outbound events
+    private final group.gnometrading.schemas.Order orderDecodeMsg = new group.gnometrading.schemas.Order();
+    private final group.gnometrading.schemas.CancelOrder cancelDecodeMsg = new group.gnometrading.schemas.CancelOrder();
+    private final group.gnometrading.schemas.ModifyOrder modifyDecodeMsg = new group.gnometrading.schemas.ModifyOrder();
+
+    private static final int OUTBOUND_BUFFER_SIZE = 64;
 
     public OmsBacktestAdapter(OrderManagementSystem oms) {
         this(oms, null);
@@ -40,92 +52,98 @@ public final class OmsBacktestAdapter {
     public OmsBacktestAdapter(OrderManagementSystem oms, BacktestRecorder recorder) {
         this.oms = oms;
         this.recorder = recorder;
-        this.oms.setActionConsumer(this::onAction);
+
+        GlobalSequence globalSequence = new GlobalSequence();
+        this.intentBuffer = new SequencedRingBuffer<>(Intent::new, globalSequence);
+        this.execReportBuffer = new SequencedRingBuffer<>(OrderExecutionReport::new, globalSequence);
+        this.outboundBuffer = new SequencedRingBuffer<>(Intent::new, globalSequence, OUTBOUND_BUFFER_SIZE);
+
+        this.omsAgent = new OmsAgent(oms, intentBuffer, execReportBuffer, outboundBuffer);
+        this.outboundPoller = outboundBuffer.createPoller(this::onOutboundEvent);
+
+        // Backtest runs single-threaded — don't start Disruptor consumer threads.
+        // doWork() uses pollers to drive the event loop explicitly.
     }
 
-    public List<LocalMessage> processIntents(long timestamp, Intent[] intents, int count) {
-        buffer.clear();
+    public List<LocalMessage> processIntents(long timestamp, Intent[] intents, int count) throws Exception {
+        messageBuffer.clear();
         for (int i = 0; i < count; i++) {
             if (recorder != null) {
                 recorder.onIntent(timestamp, intents[i]);
             }
-            oms.processIntent(intents[i]);
+            Intent slot = intentBuffer.claim();
+            slot.buffer.putBytes(0, intents[i].buffer, 0, intents[i].totalMessageSize());
+            slot.wrap(slot.buffer);
+            intentBuffer.publish();
         }
-        return buffer;
+        omsAgent.doWork();
+        outboundPoller.poll();
+        return messageBuffer;
     }
 
-    public List<LocalMessage> processIntent(long timestamp, Intent intent) {
-        buffer.clear();
-        if (recorder != null) {
-            recorder.onIntent(timestamp, intent);
+    public List<LocalMessage> processIntents(long timestamp, List<Intent> intents) throws Exception {
+        messageBuffer.clear();
+        for (Intent intent : intents) {
+            if (recorder != null) {
+                recorder.onIntent(timestamp, intent);
+            }
+            Intent slot = intentBuffer.claim();
+            slot.buffer.putBytes(0, intent.buffer, 0, intent.totalMessageSize());
+            slot.wrap(slot.buffer);
+            intentBuffer.publish();
         }
-        oms.processIntent(intent);
-        return buffer;
+        omsAgent.doWork();
+        outboundPoller.poll();
+        return messageBuffer;
     }
 
-    public List<LocalMessage> processExecutionReport(BacktestExecutionReport report) {
-        return processExecutionReport(report, 0);
-    }
-
-    public List<LocalMessage> processExecutionReport(BacktestExecutionReport report, int strategyId) {
+    public List<LocalMessage> processExecutionReport(OrderExecutionReport report) throws Exception {
         if (recorder != null) {
+            long clientOid = report.getClientOidCounter();
             long orderPrice = 0;
             long orderSize = 0;
-            TrackedOrder tracked = oms.getOrder(Long.parseLong(report.clientOid));
+            Side side = Side.None;
+            TrackedOrder tracked = oms.getOrder(clientOid);
             if (tracked != null) {
                 orderPrice = tracked.getPrice();
                 orderSize = tracked.getSize();
+                side = tracked.getSide();
             }
-            recorder.onExecutionReport(report.timestampRecv, report, strategyId, orderPrice, orderSize);
+            recorder.onExecutionReport(
+                    report.decoder.timestampRecv(),
+                    report,
+                    tracked != null ? tracked.getStrategyId() : 0,
+                    side,
+                    orderPrice,
+                    orderSize);
         }
-        // Clear buffer — exec report processing may trigger queued intents that emit new orders
-        buffer.clear();
-        omsReport.set(
-                Long.parseLong(report.clientOid),
-                strategyId,
-                report.execType,
-                report.orderStatus,
-                report.filledQty,
-                report.fillPrice,
-                report.cumulativeQty,
-                report.leavesQty,
-                report.fee,
-                report.exchangeId,
-                report.securityId,
-                report.timestampEvent,
-                report.timestampRecv);
-        oms.processExecutionReport(omsReport);
-        return buffer;
+        messageBuffer.clear();
+        OrderExecutionReport slot = execReportBuffer.claim();
+        slot.buffer.putBytes(0, report.buffer, 0, report.totalMessageSize());
+        slot.wrap(slot.buffer);
+        execReportBuffer.publish();
+        omsAgent.doWork();
+        outboundPoller.poll();
+        return messageBuffer;
     }
 
-    private void onAction(OmsAction action) {
-        switch (action.type()) {
-            case NEW_ORDER -> {
-                OmsOrder order = action.order();
-                buffer.add(new LocalMessage.OrderMessage(new BacktestOrder(
-                        order.exchangeId(),
-                        (int) order.securityId(),
-                        String.valueOf(order.clientOid()),
-                        order.side(),
-                        order.price(),
-                        order.size(),
-                        order.orderType(),
-                        order.timeInForce())));
-            }
-            case REPLACE -> {
-                OmsReplaceOrder rep = action.replace();
-                buffer.add(new LocalMessage.AmendOrderMessage(new BacktestAmendOrder(
-                        rep.exchangeId(),
-                        (int) rep.securityId(),
-                        String.valueOf(rep.originalClientOid()),
-                        rep.price(),
-                        rep.size())));
-            }
-            case CANCEL -> {
-                OmsCancelOrder cancel = action.cancel();
-                buffer.add(new LocalMessage.CancelOrderMessage(new BacktestCancelOrder(
-                        cancel.exchangeId(), (int) cancel.securityId(), String.valueOf(cancel.clientOid()))));
-            }
+    private void onOutboundEvent(long globalSeq, int templateId, org.agrona.concurrent.UnsafeBuffer buf, int len)
+            throws Exception {
+        if (templateId == OrderDecoder.TEMPLATE_ID) {
+            group.gnometrading.schemas.Order order = new group.gnometrading.schemas.Order();
+            order.buffer.putBytes(0, buf, 0, len);
+            order.wrap(order.buffer);
+            messageBuffer.add(new LocalMessage.OrderMessage(order));
+        } else if (templateId == CancelOrderDecoder.TEMPLATE_ID) {
+            group.gnometrading.schemas.CancelOrder cancel = new group.gnometrading.schemas.CancelOrder();
+            cancel.buffer.putBytes(0, buf, 0, len);
+            cancel.wrap(cancel.buffer);
+            messageBuffer.add(new LocalMessage.CancelOrderMessage(cancel));
+        } else if (templateId == ModifyOrderDecoder.TEMPLATE_ID) {
+            group.gnometrading.schemas.ModifyOrder modify = new group.gnometrading.schemas.ModifyOrder();
+            modify.buffer.putBytes(0, buf, 0, len);
+            modify.wrap(modify.buffer);
+            messageBuffer.add(new LocalMessage.ModifyOrderMessage(modify));
         }
     }
 

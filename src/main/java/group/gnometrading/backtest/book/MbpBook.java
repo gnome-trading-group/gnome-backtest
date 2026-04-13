@@ -1,7 +1,7 @@
 package group.gnometrading.backtest.book;
 
-import group.gnometrading.backtest.exchange.BacktestOrder;
 import group.gnometrading.backtest.queues.QueueModel;
+import group.gnometrading.schemas.Order;
 import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Side;
 import java.util.ArrayDeque;
@@ -25,9 +25,9 @@ public final class MbpBook {
     private final TreeMap<Long, OrderBookLevel> bids = new TreeMap<>(Comparator.reverseOrder());
     private final TreeMap<Long, OrderBookLevel> asks = new TreeMap<>();
 
-    // local_orders[side][clientOid] -> LocalOrder
-    private final Map<String, LocalOrder> localBidOrders = new HashMap<>();
-    private final Map<String, LocalOrder> localAskOrders = new HashMap<>();
+    // local_orders[side][clientOidCounter] -> LocalOrder
+    private final Map<Long, LocalOrder> localBidOrders = new HashMap<>();
+    private final Map<Long, LocalOrder> localAskOrders = new HashMap<>();
 
     public MbpBook(QueueModel queueModel) {
         this.queueModel = queueModel;
@@ -195,33 +195,36 @@ public final class MbpBook {
     /**
      * Places a local order into the book with phantom volume equal to the current displayed depth at the price level.
      */
-    public void addLocalOrder(BacktestOrder order, long remaining) {
-        TreeMap<Long, OrderBookLevel> book = order.side() == Side.Bid ? bids : asks;
-        Map<String, LocalOrder> localOrders = order.side() == Side.Bid ? localBidOrders : localAskOrders;
+    public void addLocalOrder(Order order, long remaining) {
+        Side side = order.decoder.side();
+        long price = order.decoder.price();
+        long clientOid = order.getClientOidCounter();
+        TreeMap<Long, OrderBookLevel> book = side == Side.Bid ? bids : asks;
+        Map<Long, LocalOrder> localOrders = side == Side.Bid ? localBidOrders : localAskOrders;
 
-        if (localOrders.containsKey(order.clientOid())) {
-            throw new IllegalArgumentException("Duplicate client OID: " + order.clientOid());
+        if (localOrders.containsKey(clientOid)) {
+            throw new IllegalArgumentException("Duplicate client OID: " + clientOid);
         }
 
-        OrderBookLevel level = book.get(order.price());
+        OrderBookLevel level = book.get(price);
         if (level == null) {
-            level = new OrderBookLevel(order.price(), 0);
-            book.put(order.price(), level);
+            level = new OrderBookLevel(price, 0);
+            book.put(price, level);
         }
 
         LocalOrder localOrder = new LocalOrder(order, remaining, level.size);
-        localOrders.put(order.clientOid(), localOrder);
+        localOrders.put(clientOid, localOrder);
         level.localOrders.addLast(localOrder);
     }
 
-    public void addLocalOrder(BacktestOrder order) {
-        addLocalOrder(order, order.size());
+    public void addLocalOrder(Order order) {
+        addLocalOrder(order, order.decoder.size());
     }
 
     /**
-     * Cancels a local order by clientOid. Returns true if the order was found and removed.
+     * Cancels a local order by clientOidCounter. Returns true if the order was found and removed.
      */
-    public boolean cancelOrder(String clientOid) {
+    public boolean cancelOrder(long clientOid) {
         LocalOrder localOrder = localBidOrders.remove(clientOid);
         Side side = Side.Bid;
         if (localOrder == null) {
@@ -233,22 +236,23 @@ public final class MbpBook {
         }
 
         TreeMap<Long, OrderBookLevel> book = side == Side.Bid ? bids : asks;
-        OrderBookLevel level = book.get(localOrder.order.price());
+        long price = localOrder.order.decoder.price();
+        OrderBookLevel level = book.get(price);
         if (level != null) {
             level.localOrders.remove(localOrder);
             if (level.size == 0 && !level.hasLocalOrders()) {
-                book.remove(localOrder.order.price());
+                book.remove(price);
             }
         }
         return true;
     }
 
     /**
-     * Amends a local order's price and/or size. If price changes, the order moves to a new
+     * Modifies a local order's price and/or size. If price changes, the order moves to a new
      * level and loses queue position. If only size changes, it stays in place.
-     * Returns true if the order was found and amended.
+     * Returns true if the order was found and modified.
      */
-    public boolean amendLocalOrder(String clientOid, long newPrice, long newSize) {
+    public boolean modifyLocalOrder(long clientOid, long newPrice, long newSize) {
         // Find in bid or ask maps
         LocalOrder localOrder = localBidOrders.get(clientOid);
         Side side = Side.Bid;
@@ -261,7 +265,8 @@ public final class MbpBook {
         }
 
         TreeMap<Long, OrderBookLevel> book = side == Side.Bid ? bids : asks;
-        long oldPrice = localOrder.order.price();
+        long oldPrice = localOrder.order.decoder.price();
+        long oldSize = localOrder.order.decoder.size();
 
         if (oldPrice != newPrice) {
             // Price changed — remove from old level, add to new level (loses queue position)
@@ -273,17 +278,8 @@ public final class MbpBook {
                 }
             }
 
-            // Create new order with updated price/size
-            BacktestOrder newOrder = new BacktestOrder(
-                    localOrder.order.exchangeId(),
-                    localOrder.order.securityId(),
-                    localOrder.order.clientOid(),
-                    localOrder.order.side(),
-                    newPrice,
-                    newSize,
-                    localOrder.order.orderType(),
-                    localOrder.order.timeInForce());
-            localOrder.order = newOrder;
+            // Update order fields by re-encoding into the existing SBE buffer
+            localOrder.order.encoder.price(newPrice).size(newSize);
             localOrder.remaining = newSize;
 
             // Add to new price level
@@ -294,21 +290,11 @@ public final class MbpBook {
             }
             localOrder.phantomVolume = newLevel.size;
             newLevel.localOrders.addLast(localOrder);
-        } else if (localOrder.order.size() != newSize) {
+        } else if (oldSize != newSize) {
             // Only size changed — update in place, keep queue position
-            long sizeDiff = newSize - localOrder.order.size();
+            long sizeDiff = newSize - oldSize;
             localOrder.remaining = Math.max(0, localOrder.remaining + sizeDiff);
-
-            BacktestOrder newOrder = new BacktestOrder(
-                    localOrder.order.exchangeId(),
-                    localOrder.order.securityId(),
-                    localOrder.order.clientOid(),
-                    localOrder.order.side(),
-                    localOrder.order.price(),
-                    newSize,
-                    localOrder.order.orderType(),
-                    localOrder.order.timeInForce());
-            localOrder.order = newOrder;
+            localOrder.order.encoder.size(newSize);
         }
 
         return true;
@@ -318,10 +304,12 @@ public final class MbpBook {
      * Returns immediate matches for the order by walking the opposite side of the book.
      * Skips levels with local orders to avoid self-fills.
      */
-    public List<OrderMatch> getMatchingOrders(BacktestOrder order) {
+    public List<OrderMatch> getMatchingOrders(Order order) {
         List<OrderMatch> matches = new ArrayList<>();
-        long remainingSize = order.size();
-        boolean isBuy = order.side() == Side.Bid;
+        long remainingSize = order.decoder.size();
+        long orderPrice = order.decoder.price();
+        OrderType orderType = order.decoder.orderType();
+        boolean isBuy = order.decoder.side() == Side.Bid;
         TreeMap<Long, OrderBookLevel> oppBook = isBuy ? asks : bids;
 
         for (Map.Entry<Long, OrderBookLevel> entry : oppBook.entrySet()) {
@@ -329,8 +317,8 @@ public final class MbpBook {
                 break;
             }
             long levelPrice = entry.getKey();
-            if (order.orderType() == OrderType.LIMIT) {
-                if (isBuy ? levelPrice > order.price() : levelPrice < order.price()) {
+            if (orderType == OrderType.LIMIT) {
+                if (isBuy ? levelPrice > orderPrice : levelPrice < orderPrice) {
                     break;
                 }
             }
@@ -361,11 +349,11 @@ public final class MbpBook {
         return asks;
     }
 
-    Map<String, LocalOrder> localBidOrders() {
+    Map<Long, LocalOrder> localBidOrders() {
         return localBidOrders;
     }
 
-    Map<String, LocalOrder> localAskOrders() {
+    Map<Long, LocalOrder> localAskOrders() {
         return localAskOrders;
     }
 
@@ -403,8 +391,9 @@ public final class MbpBook {
         for (LocalOrderFill fill : fills) {
             LocalOrder lo = fill.localOrder();
             if (lo.remaining == 0) {
-                localBidOrders.remove(lo.order.clientOid());
-                localAskOrders.remove(lo.order.clientOid());
+                long clientOid = lo.order.getClientOidCounter();
+                localBidOrders.remove(clientOid);
+                localAskOrders.remove(clientOid);
             }
         }
     }

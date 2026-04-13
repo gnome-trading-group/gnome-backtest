@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import group.gnometrading.backtest.book.LocalOrder;
 import group.gnometrading.backtest.book.LocalOrderFill;
-import group.gnometrading.backtest.exchange.BacktestOrder;
+import group.gnometrading.schemas.Order;
 import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.TimeInForce;
@@ -14,9 +14,19 @@ import org.junit.jupiter.api.Test;
 
 class QueueModelModifyTest {
 
+    static long nextOid = 1L;
+
     static LocalOrder makeLocalOrder(long phantom, long remaining) {
-        BacktestOrder order =
-                new BacktestOrder(1, 1, "X", Side.Bid, 100L, 10L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
+        Order order = new Order();
+        order.encoder
+                .exchangeId((short) 1)
+                .securityId(1)
+                .price(100L)
+                .size(10L)
+                .side(Side.Bid)
+                .orderType(OrderType.LIMIT)
+                .timeInForce(TimeInForce.GOOD_TILL_CANCELED);
+        order.encodeClientOid(nextOid++, 0);
         return new LocalOrder(order, remaining, phantom);
     }
 

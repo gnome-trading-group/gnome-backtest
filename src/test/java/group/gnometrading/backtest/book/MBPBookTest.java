@@ -2,8 +2,8 @@ package group.gnometrading.backtest.book;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import group.gnometrading.backtest.exchange.BacktestOrder;
 import group.gnometrading.backtest.queues.QueueModel;
+import group.gnometrading.schemas.Order;
 import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.TimeInForce;
@@ -19,8 +19,18 @@ class MBPBookTest {
         public void onModify(long prev, long next, ArrayDeque<LocalOrder> queue) {}
     }
 
-    static BacktestOrder makeOrder(long price, long size, Side side, String clientOid) {
-        return new BacktestOrder(1, 1, clientOid, side, price, size, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
+    static Order makeOrder(long price, long size, Side side, long clientOid) {
+        Order order = new Order();
+        order.encoder
+                .exchangeId((short) 1)
+                .securityId(1)
+                .price(price)
+                .size(size)
+                .side(side)
+                .orderType(OrderType.LIMIT)
+                .timeInForce(TimeInForce.GOOD_TILL_CANCELED);
+        order.encodeClientOid(clientOid, 0);
+        return order;
     }
 
     static BidAskLevel makeBidAskLevel(long bidPx, long bidSz, long askPx, long askSz) {
@@ -53,29 +63,29 @@ class MBPBookTest {
         List<BidAskLevel> levels = List.of(makeBidAskLevel(100, 50, 101, 40));
         book.onMarketUpdate(levels);
 
-        BacktestOrder order = makeOrder(100, 10, Side.Bid, "BID_1");
+        Order order = makeOrder(100, 10, Side.Bid, 1L);
         book.addLocalOrder(order);
 
         assertEquals(1, book.localBidOrders().size());
-        assertTrue(book.localBidOrders().containsKey("BID_1"));
-        LocalOrder localOrder = book.localBidOrders().get("BID_1");
+        assertTrue(book.localBidOrders().containsKey(1L));
+        LocalOrder localOrder = book.localBidOrders().get(1L);
         assertEquals(10, localOrder.remaining);
         assertEquals(50, localOrder.phantomVolume);
     }
 
     @Test
     void testAddLocalOrderAtNewLevel() {
-        BacktestOrder order = makeOrder(100, 10, Side.Bid, "BID_1");
+        Order order = makeOrder(100, 10, Side.Bid, 1L);
         book.addLocalOrder(order);
 
         assertEquals(1, book.localBidOrders().size());
         assertTrue(book.bids().containsKey(100L));
-        assertEquals(0, book.localBidOrders().get("BID_1").phantomVolume);
+        assertEquals(0, book.localBidOrders().get(1L).phantomVolume);
     }
 
     @Test
     void testDuplicateClientOidThrows() {
-        BacktestOrder order = makeOrder(100, 10, Side.Bid, "BID_1");
+        Order order = makeOrder(100, 10, Side.Bid, 1L);
         book.addLocalOrder(order);
 
         assertThrows(IllegalArgumentException.class, () -> book.addLocalOrder(order));
@@ -83,16 +93,16 @@ class MBPBookTest {
 
     @Test
     void testCancelOrderBid() {
-        BacktestOrder order = makeOrder(100, 10, Side.Bid, "BID_1");
+        Order order = makeOrder(100, 10, Side.Bid, 1L);
         book.addLocalOrder(order);
 
-        assertTrue(book.cancelOrder("BID_1"));
-        assertFalse(book.localBidOrders().containsKey("BID_1"));
+        assertTrue(book.cancelOrder(1L));
+        assertFalse(book.localBidOrders().containsKey(1L));
     }
 
     @Test
     void testCancelNonExistentOrder() {
-        assertFalse(book.cancelOrder("NONEXISTENT"));
+        assertFalse(book.cancelOrder(999L));
     }
 
     @Test
@@ -100,15 +110,15 @@ class MBPBookTest {
         List<BidAskLevel> levels = List.of(makeBidAskLevel(100, 50, 102, 40));
         book.onMarketUpdate(levels);
 
-        BacktestOrder askOrder = makeOrder(102, 8, Side.Ask, "ASK_1");
+        Order askOrder = makeOrder(102, 8, Side.Ask, 1L);
         book.addLocalOrder(askOrder);
 
         // Trade: buy 50 at 102. phantom=40, trade=50 → remainingVolume=10 → fills min(8,10)=8
         List<LocalOrderFill> fills = book.onTrade(102, 50, Side.Bid);
         assertFalse(fills.isEmpty());
-        assertEquals("ASK_1", fills.get(0).localOrder().order.clientOid());
+        assertEquals(1L, fills.get(0).localOrder().order.getClientOidCounter());
         assertEquals(8, fills.get(0).fillSize());
-        assertFalse(book.localAskOrders().containsKey("ASK_1"));
+        assertFalse(book.localAskOrders().containsKey(1L));
     }
 
     @Test
@@ -126,9 +136,17 @@ class MBPBookTest {
         book.onMarketUpdate(levels);
 
         // Market buy, should match against all asks starting at 101
-        BacktestOrder order = makeOrder(0, 60, Side.Bid, "BUY_1");
-        BacktestOrder marketOrder =
-                new BacktestOrder(1, 1, "BUY_1", Side.Bid, 0, 60, OrderType.MARKET, TimeInForce.GOOD_TILL_CANCELED);
+        Order marketOrder = new Order();
+        marketOrder
+                .encoder
+                .exchangeId((short) 1)
+                .securityId(1)
+                .price(0)
+                .size(60)
+                .side(Side.Bid)
+                .orderType(OrderType.MARKET)
+                .timeInForce(TimeInForce.GOOD_TILL_CANCELED);
+        marketOrder.encodeClientOid(1L, 0);
         List<OrderMatch> matches = book.getMatchingOrders(marketOrder);
 
         assertEquals(2, matches.size());
@@ -144,7 +162,7 @@ class MBPBookTest {
         book.onMarketUpdate(levels);
 
         // Limit buy at 101: should only match the ask at 101, not 103
-        BacktestOrder limitOrder = makeOrder(101, 50, Side.Bid, "LIMIT_BUY");
+        Order limitOrder = makeOrder(101, 50, Side.Bid, 1L);
         List<OrderMatch> matches = book.getMatchingOrders(limitOrder);
 
         assertEquals(1, matches.size());
@@ -158,12 +176,20 @@ class MBPBookTest {
         book.onMarketUpdate(levels);
 
         // Place a local ask at 101
-        BacktestOrder askOrder = makeOrder(101, 10, Side.Ask, "ASK_1");
+        Order askOrder = makeOrder(101, 10, Side.Ask, 1L);
         book.addLocalOrder(askOrder);
 
         // Try to buy against 101 where we have a local order — returns empty (self-trade prevented)
-        BacktestOrder buyOrder =
-                new BacktestOrder(1, 1, "BUY_1", Side.Bid, 0, 10, OrderType.MARKET, TimeInForce.GOOD_TILL_CANCELED);
+        Order buyOrder = new Order();
+        buyOrder.encoder
+                .exchangeId((short) 1)
+                .securityId(1)
+                .price(0)
+                .size(10)
+                .side(Side.Bid)
+                .orderType(OrderType.MARKET)
+                .timeInForce(TimeInForce.GOOD_TILL_CANCELED);
+        buyOrder.encodeClientOid(2L, 0);
         List<OrderMatch> matches = book.getMatchingOrders(buyOrder);
         assertTrue(matches.isEmpty());
     }
@@ -194,22 +220,22 @@ class MBPBookTest {
         assertEquals(101L, book.getBestAsk());
 
         // Add local orders
-        book.addLocalOrder(makeOrder(99, 10, Side.Bid, "BID_1"));
-        book.addLocalOrder(makeOrder(98, 15, Side.Bid, "BID_2"));
-        book.addLocalOrder(makeOrder(102, 8, Side.Ask, "ASK_1"));
+        book.addLocalOrder(makeOrder(99, 10, Side.Bid, 1L));
+        book.addLocalOrder(makeOrder(98, 15, Side.Bid, 2L));
+        book.addLocalOrder(makeOrder(102, 8, Side.Ask, 3L));
 
         assertEquals(2, book.localBidOrders().size());
         assertEquals(1, book.localAskOrders().size());
 
-        // Aggressive buy trades that hit our ASK_1 at 102.
+        // Aggressive buy trades that hit our ASK at 102.
         // Level 101 (size=40) is consumed first. Then at 102: phantom=35, remaining=40 → fills min(8,5)=5
         List<LocalOrderFill> fills = book.onTrade(102, 80, Side.Bid);
 
         assertFalse(fills.isEmpty());
 
-        // Cancel BID_1
-        assertTrue(book.cancelOrder("BID_1"));
-        assertFalse(book.localBidOrders().containsKey("BID_1"));
+        // Cancel bid 1
+        assertTrue(book.cancelOrder(1L));
+        assertFalse(book.localBidOrders().containsKey(1L));
         assertEquals(1, book.localBidOrders().size());
     }
 
@@ -220,13 +246,13 @@ class MBPBookTest {
         List<BidAskLevel> levels = List.of(makeBidAskLevel(100, 50, 101, 40));
         book.onMarketUpdate(levels);
 
-        BacktestOrder order = makeOrder(101, 10, Side.Ask, "ASK_1");
+        Order order = makeOrder(101, 10, Side.Ask, 1L);
         book.addLocalOrder(order);
 
         assertEquals(1, book.localAskOrders().size());
         assertTrue(book.localBidOrders().isEmpty());
-        assertTrue(book.localAskOrders().containsKey("ASK_1"));
-        LocalOrder localOrder = book.localAskOrders().get("ASK_1");
+        assertTrue(book.localAskOrders().containsKey(1L));
+        LocalOrder localOrder = book.localAskOrders().get(1L);
         assertEquals(10, localOrder.remaining);
         assertEquals(40, localOrder.phantomVolume);
     }
@@ -236,11 +262,11 @@ class MBPBookTest {
         List<BidAskLevel> levels = List.of(makeBidAskLevel(100, 50, 101, 40));
         book.onMarketUpdate(levels);
 
-        BacktestOrder order = makeOrder(105, 10, Side.Ask, "ASK_NEW");
+        Order order = makeOrder(105, 10, Side.Ask, 1L);
         book.addLocalOrder(order);
 
         assertTrue(book.asks().containsKey(105L));
-        assertEquals(0, book.localAskOrders().get("ASK_NEW").phantomVolume);
+        assertEquals(0, book.localAskOrders().get(1L).phantomVolume);
     }
 
     @Test
@@ -248,29 +274,29 @@ class MBPBookTest {
         List<BidAskLevel> levels = List.of(makeBidAskLevel(100, 50, 101, 40));
         book.onMarketUpdate(levels);
 
-        BacktestOrder order = makeOrder(101, 10, Side.Ask, "ASK_1");
+        Order order = makeOrder(101, 10, Side.Ask, 1L);
         book.addLocalOrder(order);
 
-        assertTrue(book.cancelOrder("ASK_1"));
+        assertTrue(book.cancelOrder(1L));
         assertTrue(book.localAskOrders().isEmpty());
         assertTrue(book.asks().containsKey(101L));
         assertFalse(book.asks().get(101L).hasLocalOrders());
     }
 
-    // --- Amend order tests ---
+    // --- Modify order tests ---
 
     @Test
-    void testAmendLocalOrderPriceChange() {
+    void testModifyLocalOrderPriceChange() {
         List<BidAskLevel> levels = List.of(makeBidAskLevel(100, 50, 101, 40), makeBidAskLevel(99, 30, 102, 35));
         book.onMarketUpdate(levels);
 
-        BacktestOrder order = makeOrder(100, 10, Side.Bid, "BID_1");
+        Order order = makeOrder(100, 10, Side.Bid, 1L);
         book.addLocalOrder(order);
 
-        assertTrue(book.amendLocalOrder("BID_1", 99, 10));
+        assertTrue(book.modifyLocalOrder(1L, 99, 10));
 
-        LocalOrder amended = book.localBidOrders().get("BID_1");
-        assertEquals(99, amended.order.price());
+        LocalOrder amended = book.localBidOrders().get(1L);
+        assertEquals(99, amended.order.decoder.price());
         assertEquals(10, amended.remaining);
         assertEquals(30, amended.phantomVolume);
         assertFalse(book.bids().get(100L).hasLocalOrders());
@@ -278,83 +304,83 @@ class MBPBookTest {
     }
 
     @Test
-    void testAmendLocalOrderSizeIncrease() {
+    void testModifyLocalOrderSizeIncrease() {
         List<BidAskLevel> levels = List.of(makeBidAskLevel(100, 50, 101, 40));
         book.onMarketUpdate(levels);
 
-        BacktestOrder order = makeOrder(100, 10, Side.Bid, "BID_1");
+        Order order = makeOrder(100, 10, Side.Bid, 1L);
         book.addLocalOrder(order);
 
-        assertTrue(book.amendLocalOrder("BID_1", 100, 15));
+        assertTrue(book.modifyLocalOrder(1L, 100, 15));
 
-        LocalOrder amended = book.localBidOrders().get("BID_1");
-        assertEquals(15, amended.order.size());
+        LocalOrder amended = book.localBidOrders().get(1L);
+        assertEquals(15, amended.order.decoder.size());
         assertEquals(15, amended.remaining);
         assertEquals(50, amended.phantomVolume);
     }
 
     @Test
-    void testAmendLocalOrderSizeDecrease() {
+    void testModifyLocalOrderSizeDecrease() {
         List<BidAskLevel> levels = List.of(makeBidAskLevel(100, 50, 101, 40));
         book.onMarketUpdate(levels);
 
-        BacktestOrder order = makeOrder(100, 10, Side.Bid, "BID_1");
+        Order order = makeOrder(100, 10, Side.Bid, 1L);
         book.addLocalOrder(order);
 
-        assertTrue(book.amendLocalOrder("BID_1", 100, 6));
+        assertTrue(book.modifyLocalOrder(1L, 100, 6));
 
-        LocalOrder amended = book.localBidOrders().get("BID_1");
-        assertEquals(6, amended.order.size());
+        LocalOrder amended = book.localBidOrders().get(1L);
+        assertEquals(6, amended.order.decoder.size());
         assertEquals(6, amended.remaining);
         assertEquals(50, amended.phantomVolume);
     }
 
     @Test
-    void testAmendLocalOrderSizeDecreaseBelowRemaining() {
+    void testModifyLocalOrderSizeDecreaseBelowRemaining() {
         List<BidAskLevel> levels = List.of(makeBidAskLevel(100, 50, 101, 40));
         book.onMarketUpdate(levels);
 
         // Order size=10, but after a partial fill remaining would be 3
         // Simulate by placing with explicit remaining
-        BacktestOrder order = makeOrder(100, 10, Side.Bid, "BID_1");
+        Order order = makeOrder(100, 10, Side.Bid, 1L);
         book.addLocalOrder(order, 3);
 
-        // Amend size to 2 (sizeDiff = 2-10 = -8, remaining = max(0, 3 + (-8)) = 0)
-        assertTrue(book.amendLocalOrder("BID_1", 100, 2));
+        // Modify size to 2 (sizeDiff = 2-10 = -8, remaining = max(0, 3 + (-8)) = 0)
+        assertTrue(book.modifyLocalOrder(1L, 100, 2));
 
-        LocalOrder amended = book.localBidOrders().get("BID_1");
-        assertEquals(2, amended.order.size());
+        LocalOrder amended = book.localBidOrders().get(1L);
+        assertEquals(2, amended.order.decoder.size());
         assertEquals(0, amended.remaining);
     }
 
     @Test
-    void testAmendNonExistentOrder() {
-        assertFalse(book.amendLocalOrder("NONEXISTENT", 100, 10));
+    void testModifyNonExistentOrder() {
+        assertFalse(book.modifyLocalOrder(999L, 100, 10));
     }
 
     @Test
-    void testAmendLocalOrderPriceChangeToNewLevel() {
+    void testModifyLocalOrderPriceChangeToNewLevel() {
         List<BidAskLevel> levels = List.of(makeBidAskLevel(100, 50, 101, 40));
         book.onMarketUpdate(levels);
 
-        BacktestOrder order = makeOrder(100, 10, Side.Bid, "BID_1");
+        Order order = makeOrder(100, 10, Side.Bid, 1L);
         book.addLocalOrder(order);
 
-        assertTrue(book.amendLocalOrder("BID_1", 97, 10));
+        assertTrue(book.modifyLocalOrder(1L, 97, 10));
 
         assertTrue(book.bids().containsKey(97L));
-        assertEquals(0, book.localBidOrders().get("BID_1").phantomVolume);
+        assertEquals(0, book.localBidOrders().get(1L).phantomVolume);
     }
 
     @Test
-    void testAmendLocalOrderPriceChangeRemovesStaleOldLevel() {
-        // Local bid at a level with no market depth (size=0) — amending away should remove it
-        BacktestOrder order = makeOrder(100, 10, Side.Bid, "BID_1");
+    void testModifyLocalOrderPriceChangeRemovesStaleOldLevel() {
+        // Local bid at a level with no market depth (size=0) — modifying away should remove it
+        Order order = makeOrder(100, 10, Side.Bid, 1L);
         book.addLocalOrder(order);
 
         assertTrue(book.bids().containsKey(100L));
 
-        assertTrue(book.amendLocalOrder("BID_1", 99, 10));
+        assertTrue(book.modifyLocalOrder(1L, 99, 10));
 
         // Old level at 100 (size=0, no local orders) should be cleaned up
         assertFalse(book.bids().containsKey(100L));
@@ -363,11 +389,11 @@ class MBPBookTest {
     @Test
     void testCancelOrderRemovesStaleLevel() {
         // Local ask at a level with no market depth — cancel should remove the level
-        BacktestOrder order = makeOrder(105, 10, Side.Ask, "ASK_1");
+        Order order = makeOrder(105, 10, Side.Ask, 1L);
         book.addLocalOrder(order);
         assertTrue(book.asks().containsKey(105L));
 
-        assertTrue(book.cancelOrder("ASK_1"));
+        assertTrue(book.cancelOrder(1L));
 
         assertFalse(book.asks().containsKey(105L));
     }
@@ -377,10 +403,10 @@ class MBPBookTest {
         List<BidAskLevel> levels = List.of(makeBidAskLevel(100, 50, 101, 40));
         book.onMarketUpdate(levels);
 
-        BacktestOrder order = makeOrder(101, 10, Side.Ask, "ASK_1");
+        Order order = makeOrder(101, 10, Side.Ask, 1L);
         book.addLocalOrder(order);
 
-        assertTrue(book.cancelOrder("ASK_1"));
+        assertTrue(book.cancelOrder(1L));
 
         // Level at 101 still has market depth (size=40), so it should remain
         assertTrue(book.asks().containsKey(101L));
@@ -394,7 +420,7 @@ class MBPBookTest {
         List<BidAskLevel> levels = List.of(makeBidAskLevel(100, 50, 101, 40), makeBidAskLevel(99, 30, 102, 35));
         book.onMarketUpdate(levels);
 
-        book.addLocalOrder(makeOrder(99, 5, Side.Bid, "BID_1"));
+        book.addLocalOrder(makeOrder(99, 5, Side.Bid, 1L));
 
         // New update omits level 99 and 102
         List<BidAskLevel> update = List.of(makeBidAskLevel(100, 45, 101, 38));
@@ -403,7 +429,7 @@ class MBPBookTest {
         assertTrue(book.bids().containsKey(99L));
         assertEquals(0, book.bids().get(99L).size);
         assertTrue(book.bids().get(99L).hasLocalOrders());
-        assertTrue(book.localBidOrders().containsKey("BID_1"));
+        assertTrue(book.localBidOrders().containsKey(1L));
     }
 
     @Test
@@ -413,19 +439,19 @@ class MBPBookTest {
         book.onMarketUpdate(seed);
 
         // Local bid at 103 — phantom=50 (the existing bid depth)
-        BacktestOrder order = makeOrder(103, 8, Side.Bid, "BID_1");
+        Order order = makeOrder(103, 8, Side.Bid, 1L);
         book.addLocalOrder(order);
-        assertEquals(50, book.localBidOrders().get("BID_1").phantomVolume);
+        assertEquals(50, book.localBidOrders().get(1L).phantomVolume);
 
         // Market update: ask drops to 103, crossing the book (bestBid=103, bestAsk=103).
-        // Phantom should be bypassed, so BID_1 fills immediately despite phantom=50.
-        List<BidAskLevel> levels = List.of(makeBidAskLevel(103, 50, 103, 30));
-        List<LocalOrderFill> fills = book.onMarketUpdate(levels);
+        // Phantom should be bypassed, so bid fills immediately despite phantom=50.
+        List<BidAskLevel> crossed = List.of(makeBidAskLevel(103, 50, 103, 30));
+        List<LocalOrderFill> fills = book.onMarketUpdate(crossed);
 
         assertFalse(fills.isEmpty());
-        assertEquals("BID_1", fills.get(0).localOrder().order.clientOid());
+        assertEquals(1L, fills.get(0).localOrder().order.getClientOidCounter());
         assertEquals(8, fills.get(0).fillSize());
-        assertFalse(book.localBidOrders().containsKey("BID_1"));
+        assertFalse(book.localBidOrders().containsKey(1L));
     }
 
     @Test
@@ -435,19 +461,19 @@ class MBPBookTest {
         book.onMarketUpdate(seed);
 
         // Local ask at 98 — phantom=40 (the existing ask depth)
-        BacktestOrder order = makeOrder(98, 8, Side.Ask, "ASK_1");
+        Order order = makeOrder(98, 8, Side.Ask, 1L);
         book.addLocalOrder(order);
-        assertEquals(40, book.localAskOrders().get("ASK_1").phantomVolume);
+        assertEquals(40, book.localAskOrders().get(1L).phantomVolume);
 
         // Market update: bid rises to 98, crossing the book (bestBid=98, bestAsk=98).
-        // Phantom should be bypassed, so ASK_1 fills immediately despite phantom=40.
-        List<BidAskLevel> levels = List.of(makeBidAskLevel(98, 40, 98, 40));
-        List<LocalOrderFill> fills = book.onMarketUpdate(levels);
+        // Phantom should be bypassed, so ask fills immediately despite phantom=40.
+        List<BidAskLevel> crossed = List.of(makeBidAskLevel(98, 40, 98, 40));
+        List<LocalOrderFill> fills = book.onMarketUpdate(crossed);
 
         assertFalse(fills.isEmpty());
-        assertEquals("ASK_1", fills.get(0).localOrder().order.clientOid());
+        assertEquals(1L, fills.get(0).localOrder().order.getClientOidCounter());
         assertEquals(8, fills.get(0).fillSize());
-        assertFalse(book.localAskOrders().containsKey("ASK_1"));
+        assertFalse(book.localAskOrders().containsKey(1L));
     }
 
     // --- Trade edge cases ---
@@ -458,16 +484,16 @@ class MBPBookTest {
         book.onMarketUpdate(levels);
 
         // Both orders placed at 102 with phantom=5
-        book.addLocalOrder(makeOrder(102, 4, Side.Ask, "ASK_1"));
-        book.addLocalOrder(makeOrder(102, 6, Side.Ask, "ASK_2"));
+        book.addLocalOrder(makeOrder(102, 4, Side.Ask, 1L));
+        book.addLocalOrder(makeOrder(102, 6, Side.Ask, 2L));
 
-        // Trade 20 at 102: phantom=5, remaining=15. Fill ASK_1(4), then ASK_2(6)
+        // Trade 20 at 102: phantom=5, remaining=15. Fill order 1 (4), then order 2 (6)
         List<LocalOrderFill> fills = book.onTrade(102, 20, Side.Bid);
 
         assertEquals(2, fills.size());
-        assertEquals("ASK_1", fills.get(0).localOrder().order.clientOid());
+        assertEquals(1L, fills.get(0).localOrder().order.getClientOidCounter());
         assertEquals(4, fills.get(0).fillSize());
-        assertEquals("ASK_2", fills.get(1).localOrder().order.clientOid());
+        assertEquals(2L, fills.get(1).localOrder().order.getClientOidCounter());
         assertEquals(6, fills.get(1).fillSize());
         assertTrue(book.localAskOrders().isEmpty());
     }
@@ -478,8 +504,8 @@ class MBPBookTest {
         book.onMarketUpdate(levels);
 
         // Local bid at 100 (phantom=10) and 99 (phantom=20)
-        book.addLocalOrder(makeOrder(100, 5, Side.Bid, "BID_100"));
-        book.addLocalOrder(makeOrder(99, 3, Side.Bid, "BID_99"));
+        book.addLocalOrder(makeOrder(100, 5, Side.Bid, 1L));
+        book.addLocalOrder(makeOrder(99, 3, Side.Bid, 2L));
 
         // Sell trade down to 99: walks bids descending
         // At 100: onTrade(40, deque): phantom=10, remainingVol=40-10=30, fill min(5,30)=5
@@ -488,9 +514,9 @@ class MBPBookTest {
         List<LocalOrderFill> fills = book.onTrade(99, 40, Side.Ask);
 
         assertEquals(2, fills.size());
-        assertEquals("BID_100", fills.get(0).localOrder().order.clientOid());
+        assertEquals(1L, fills.get(0).localOrder().order.getClientOidCounter());
         assertEquals(5, fills.get(0).fillSize());
-        assertEquals("BID_99", fills.get(1).localOrder().order.clientOid());
+        assertEquals(2L, fills.get(1).localOrder().order.getClientOidCounter());
         assertEquals(3, fills.get(1).fillSize());
         assertTrue(book.localBidOrders().isEmpty());
     }
@@ -500,15 +526,15 @@ class MBPBookTest {
         List<BidAskLevel> levels = List.of(makeBidAskLevel(100, 50, 102, 3));
         book.onMarketUpdate(levels);
 
-        book.addLocalOrder(makeOrder(102, 10, Side.Ask, "ASK_1"));
+        book.addLocalOrder(makeOrder(102, 10, Side.Ask, 1L));
 
         // Trade 5 at 102: phantom=3, remainingVol=5-3=2, fill min(10,2)=2
         List<LocalOrderFill> fills = book.onTrade(102, 5, Side.Bid);
 
         assertEquals(1, fills.size());
         assertEquals(2, fills.get(0).fillSize());
-        assertEquals(8, book.localAskOrders().get("ASK_1").remaining);
-        assertTrue(book.localAskOrders().containsKey("ASK_1"));
+        assertEquals(8, book.localAskOrders().get(1L).remaining);
+        assertTrue(book.localAskOrders().containsKey(1L));
     }
 
     @Test
@@ -518,15 +544,15 @@ class MBPBookTest {
         book.onMarketUpdate(levels);
 
         // Local ask at 101 (phantom=10) and 103 (phantom=30)
-        book.addLocalOrder(makeOrder(101, 5, Side.Ask, "ASK_101"));
-        book.addLocalOrder(makeOrder(103, 5, Side.Ask, "ASK_103"));
+        book.addLocalOrder(makeOrder(101, 5, Side.Ask, 1L));
+        book.addLocalOrder(makeOrder(103, 5, Side.Ask, 2L));
 
         // Trade up to 102: should process 101 (<=102) but NOT 103 (>102)
         List<LocalOrderFill> fills = book.onTrade(102, 50, Side.Bid);
 
         assertEquals(1, fills.size());
-        assertEquals("ASK_101", fills.get(0).localOrder().order.clientOid());
-        assertTrue(book.localAskOrders().containsKey("ASK_103"));
+        assertEquals(1L, fills.get(0).localOrder().order.getClientOidCounter());
+        assertTrue(book.localAskOrders().containsKey(2L));
     }
 
     // --- Matching edge cases ---
@@ -536,8 +562,16 @@ class MBPBookTest {
         List<BidAskLevel> levels = List.of(makeBidAskLevel(100, 50, 101, 40), makeBidAskLevel(99, 30, 102, 35));
         book.onMarketUpdate(levels);
 
-        BacktestOrder order =
-                new BacktestOrder(1, 1, "SELL_1", Side.Ask, 0, 60, OrderType.MARKET, TimeInForce.GOOD_TILL_CANCELED);
+        Order order = new Order();
+        order.encoder
+                .exchangeId((short) 1)
+                .securityId(1)
+                .price(0)
+                .size(60)
+                .side(Side.Ask)
+                .orderType(OrderType.MARKET)
+                .timeInForce(TimeInForce.GOOD_TILL_CANCELED);
+        order.encodeClientOid(1L, 0);
         List<OrderMatch> matches = book.getMatchingOrders(order);
 
         assertEquals(2, matches.size());
@@ -553,7 +587,7 @@ class MBPBookTest {
         book.onMarketUpdate(levels);
 
         // Limit sell at 99: should only match bids >= 99, which is only bid at 100
-        BacktestOrder order = makeOrder(99, 60, Side.Ask, "LIMIT_SELL");
+        Order order = makeOrder(99, 60, Side.Ask, 1L);
         List<OrderMatch> matches = book.getMatchingOrders(order);
 
         assertEquals(1, matches.size());
@@ -563,8 +597,16 @@ class MBPBookTest {
 
     @Test
     void testGetMatchingOrdersEmptyBook() {
-        BacktestOrder order =
-                new BacktestOrder(1, 1, "BUY_1", Side.Bid, 0, 10, OrderType.MARKET, TimeInForce.GOOD_TILL_CANCELED);
+        Order order = new Order();
+        order.encoder
+                .exchangeId((short) 1)
+                .securityId(1)
+                .price(0)
+                .size(10)
+                .side(Side.Bid)
+                .orderType(OrderType.MARKET)
+                .timeInForce(TimeInForce.GOOD_TILL_CANCELED);
+        order.encodeClientOid(1L, 0);
         List<OrderMatch> matches = book.getMatchingOrders(order);
 
         assertTrue(matches.isEmpty());
@@ -575,8 +617,16 @@ class MBPBookTest {
         List<BidAskLevel> levels = List.of(makeBidAskLevel(100, 50, 101, 20));
         book.onMarketUpdate(levels);
 
-        BacktestOrder order =
-                new BacktestOrder(1, 1, "BUY_1", Side.Bid, 0, 50, OrderType.MARKET, TimeInForce.GOOD_TILL_CANCELED);
+        Order order = new Order();
+        order.encoder
+                .exchangeId((short) 1)
+                .securityId(1)
+                .price(0)
+                .size(50)
+                .side(Side.Bid)
+                .orderType(OrderType.MARKET)
+                .timeInForce(TimeInForce.GOOD_TILL_CANCELED);
+        order.encodeClientOid(1L, 0);
         List<OrderMatch> matches = book.getMatchingOrders(order);
 
         assertEquals(1, matches.size());

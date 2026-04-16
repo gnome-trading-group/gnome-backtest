@@ -4,22 +4,18 @@ import group.gnometrading.backtest.bridge.BytesSchemaFactory;
 import group.gnometrading.backtest.exchange.SimulatedExchange;
 import group.gnometrading.backtest.oms.OmsBacktestAdapter;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
+import group.gnometrading.backtest.recorder.MetricAware;
 import group.gnometrading.data.MarketDataEntry;
-import group.gnometrading.schemas.CancelOrder;
 import group.gnometrading.schemas.Intent;
 import group.gnometrading.schemas.IntentDecoder;
 import group.gnometrading.schemas.MessageHeaderDecoder;
-import group.gnometrading.schemas.ModifyOrder;
-import group.gnometrading.schemas.Order;
 import group.gnometrading.schemas.OrderExecutionReport;
 import group.gnometrading.schemas.Schema;
-import group.gnometrading.schemas.SchemaType;
 import group.gnometrading.sequencer.JournalReader;
 import group.gnometrading.sequencer.SequencedPoller;
 import group.gnometrading.strategies.StrategyAgent;
 import java.io.IOException;
 import java.nio.ByteOrder;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -43,10 +39,7 @@ public final class BacktestDriver {
 
     private static final Logger logger = Logger.getLogger(BacktestDriver.class.getName());
 
-    private final LocalDateTime startDate;
-    private final LocalDateTime endDate;
     private final List<MarketDataEntry> entries;
-    private final SchemaType schemaType;
     private final StrategyAgent strategy;
     // Map of exchangeId -> (securityId -> SimulatedExchange)
     private final Map<Integer, Map<Integer, SimulatedExchange>> exchanges;
@@ -63,30 +56,26 @@ public final class BacktestDriver {
     private PriorityQueue<BacktestEvent> queue;
     private boolean ready = false;
     private int eventsProcessed = 0;
-    private int initialQueueSize = 0;
-    private long lastTimestamp = 0;
-    private long sequenceCounter = 0;
 
     public BacktestDriver(
-            LocalDateTime startDate,
-            LocalDateTime endDate,
             List<MarketDataEntry> entries,
-            SchemaType schemaType,
             StrategyAgent strategy,
             Map<Integer, Map<Integer, SimulatedExchange>> exchanges,
             OmsBacktestAdapter adapter,
             S3Client s3Client,
-            String bucket) {
-        this.startDate = startDate;
-        this.endDate = endDate;
+            String bucket,
+            BacktestRecorder recorder) {
         this.entries = entries;
-        this.schemaType = schemaType;
         this.strategy = strategy;
         this.exchanges = exchanges;
         this.adapter = adapter;
         this.s3Client = s3Client;
         this.bucket = bucket;
+        this.recorder = recorder;
         this.intentPoller = strategy.getIntentBuffer().createPoller(this::collectIntent);
+        if (recorder != null && strategy instanceof MetricAware metricAware) {
+            metricAware.setMetricRecorder(recorder.createMetricRecorder());
+        }
     }
 
     private void collectIntent(long globalSeq, int templateId, UnsafeBuffer buf, int len) {
@@ -115,14 +104,6 @@ public final class BacktestDriver {
         return override > 0 ? override : lastProcessingTimeNs;
     }
 
-    public void setRecorder(BacktestRecorder recorder) {
-        this.recorder = recorder;
-    }
-
-    public BacktestRecorder getRecorder() {
-        return this.recorder;
-    }
-
     /**
      * Loads all market data from S3 into the priority queue.
      * Each record produces two events: EXCHANGE_MARKET_DATA (at timestampEvent) and
@@ -139,7 +120,6 @@ public final class BacktestDriver {
                 queue.add(new BacktestEvent(localTs, EventType.LOCAL_MARKET_DATA, schema));
             }
         }
-        initialQueueSize = queue.size();
         ready = true;
     }
 
@@ -157,24 +137,11 @@ public final class BacktestDriver {
             queue.add(new BacktestEvent(ts, EventType.EXCHANGE_MARKET_DATA, schema));
             queue.add(new BacktestEvent(ts, EventType.LOCAL_MARKET_DATA, schema));
         });
-        initialQueueSize = queue.size();
         ready = true;
     }
 
     public int getEventsProcessed() {
         return eventsProcessed;
-    }
-
-    public long getSequenceCounter() {
-        return sequenceCounter;
-    }
-
-    public int getInitialQueueSize() {
-        return initialQueueSize;
-    }
-
-    public long getLastTimestamp() {
-        return lastTimestamp;
     }
 
     public void fullyExecute() {
@@ -193,7 +160,6 @@ public final class BacktestDriver {
             }
             queue.poll();
             eventsProcessed++;
-            lastTimestamp = event.timestamp();
 
             try {
                 processEvent(event);
@@ -205,7 +171,6 @@ public final class BacktestDriver {
     }
 
     private void processEvent(BacktestEvent event) throws Exception {
-        sequenceCounter++;
         switch (event.eventType()) {
             case EXCHANGE_MARKET_DATA -> {
                 Schema schema = (Schema) event.data();
@@ -221,11 +186,17 @@ public final class BacktestDriver {
                 OrderExecutionReport report = (OrderExecutionReport) event.data();
                 // OMS processes exec report first (position tracking, state updates, may emit orders)
                 List<LocalMessage> omsMessages = adapter.processExecutionReport(report);
-                // Deliver exec report to strategy and let it react
-                strategy.submitExecReport(report);
+                // OMS forwards exec report to strategy (after position state is updated)
+                for (OrderExecutionReport forwarded : adapter.getStrategyExecReports()) {
+                    strategy.submitExecReport(forwarded);
+                }
                 stepStrategy();
                 List<Intent> strategyIntents = drainIntents();
                 List<LocalMessage> strategyMessages = adapter.processIntents(event.timestamp(), strategyIntents);
+                // Deliver any synthetic risk rejection reports from intent processing
+                for (OrderExecutionReport reject : adapter.getStrategyExecReports()) {
+                    strategy.submitExecReport(reject);
+                }
                 // OMS messages have no strategy processing delay; strategy messages do
                 scheduleLocalMessages(event.timestamp(), omsMessages);
                 scheduleLocalMessages(event.timestamp(), strategyMessages, getProcessingTime());
@@ -239,6 +210,10 @@ public final class BacktestDriver {
                 stepStrategy();
                 List<Intent> intents = drainIntents();
                 List<LocalMessage> messages = adapter.processIntents(event.timestamp(), intents);
+                // Deliver any synthetic risk rejection reports
+                for (OrderExecutionReport reject : adapter.getStrategyExecReports()) {
+                    strategy.submitExecReport(reject);
+                }
                 scheduleLocalMessages(event.timestamp(), messages, getProcessingTime());
             }
             case LOCAL_MESSAGE -> {
@@ -277,6 +252,9 @@ public final class BacktestDriver {
             SimulatedExchange exchange = getExchangeForMessage(message);
             long deliveryTs = eventTimestamp + processingTime + exchange.simulateNetworkLatency();
             queue.add(new BacktestEvent(deliveryTs, EventType.LOCAL_MESSAGE, message));
+            if (recorder != null && message instanceof LocalMessage.OrderMessage om) {
+                recorder.onOrderSubmitted(eventTimestamp, om.order());
+            }
         }
     }
 
@@ -291,32 +269,10 @@ public final class BacktestDriver {
     }
 
     private SimulatedExchange getExchangeForMessage(LocalMessage message) {
-        if (message instanceof LocalMessage.OrderMessage om) {
-            Order order = om.order();
-            return exchanges.get((int) order.decoder.exchangeId()).get((int) order.decoder.securityId());
-        } else if (message instanceof LocalMessage.CancelOrderMessage cm) {
-            CancelOrder cancel = cm.cancelOrder();
-            return exchanges.get((int) cancel.decoder.exchangeId()).get((int) cancel.decoder.securityId());
-        } else if (message instanceof LocalMessage.ModifyOrderMessage mm) {
-            ModifyOrder modify = mm.modifyOrder();
-            return exchanges.get((int) modify.decoder.exchangeId()).get((int) modify.decoder.securityId());
-        }
-        throw new IllegalStateException("Unknown message type: " + message.getClass());
+        return exchanges.get(message.exchangeId()).get(message.securityId());
     }
 
     private void setExchangeIds(OrderExecutionReport report, LocalMessage message) {
-        // exchangeId and securityId may already be set by the SimulatedExchange,
-        // but for order submissions the exchange sets them from the order fields.
-        // This is a no-op if already set — we only call it for clarification on the fill path.
-        if (message instanceof LocalMessage.OrderMessage om) {
-            Order order = om.order();
-            report.encoder.exchangeId((short) order.decoder.exchangeId()).securityId(order.decoder.securityId());
-        } else if (message instanceof LocalMessage.CancelOrderMessage cm) {
-            CancelOrder cancel = cm.cancelOrder();
-            report.encoder.exchangeId((short) cancel.decoder.exchangeId()).securityId(cancel.decoder.securityId());
-        } else if (message instanceof LocalMessage.ModifyOrderMessage mm) {
-            ModifyOrder modify = mm.modifyOrder();
-            report.encoder.exchangeId((short) modify.decoder.exchangeId()).securityId(modify.decoder.securityId());
-        }
+        report.encoder.exchangeId((short) message.exchangeId()).securityId(message.securityId());
     }
 }

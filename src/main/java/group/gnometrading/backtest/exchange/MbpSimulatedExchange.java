@@ -95,7 +95,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         if (orderBook.cancelOrder(clientOid)) {
             return List.of(canceled(cancel));
         }
-        return List.of(rejected(cancel));
+        return List.of(cancelRejected(cancel));
     }
 
     @Override
@@ -117,7 +117,8 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
             report.encoder.exchangeId((short) modify.decoder.exchangeId()).securityId(modify.decoder.securityId());
             return List.of(report);
         }
-        return List.of(rejected(modify));
+        // FIX protocol sends CANCEL_REJECT when rejecting a modify/replace order
+        return List.of(cancelRejected(modify));
     }
 
     @Override
@@ -170,19 +171,19 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
     private List<OrderExecutionReport> mapFillsToReports(List<LocalOrderFill> fills) {
         List<OrderExecutionReport> reports = new ArrayList<>(fills.size());
         for (LocalOrderFill fill : fills) {
-            reports.add(mapFillToReport(fill.localOrder(), fill.fillSize()));
+            reports.add(mapFillToReport(fill.localOrder(), fill.fillSize(), fill.remainingAfterFill()));
         }
         return reports;
     }
 
-    private OrderExecutionReport mapFillToReport(LocalOrder localOrder, long filledQty) {
+    private OrderExecutionReport mapFillToReport(LocalOrder localOrder, long filledQty, long remainingAfterFill) {
         long price = localOrder.order.decoder.price();
         // Use double to avoid overflow: price (~9e13) * size (~1e6) = ~9e19 exceeds Long.MAX_VALUE
         double notional = (double) filledQty * price;
-        long cumulativeQty = localOrder.order.decoder.size() - localOrder.remaining;
+        long cumulativeQty = localOrder.order.decoder.size() - remainingAfterFill;
 
-        ExecType execType = localOrder.remaining == 0 ? ExecType.FILL : ExecType.PARTIAL_FILL;
-        OrderStatus orderStatus = localOrder.remaining == 0 ? OrderStatus.FILLED : OrderStatus.PARTIALLY_FILLED;
+        ExecType execType = remainingAfterFill == 0 ? ExecType.FILL : ExecType.PARTIAL_FILL;
+        OrderStatus orderStatus = remainingAfterFill == 0 ? OrderStatus.FILLED : OrderStatus.PARTIALLY_FILLED;
 
         OrderExecutionReport report = makeReport(
                 localOrder.order.getClientOidCounter(),
@@ -192,7 +193,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
                 filledQty,
                 price,
                 cumulativeQty,
-                localOrder.remaining,
+                remainingAfterFill,
                 toScaledFee(feeModel.calculateFee(notional, true)));
         report.encoder
                 .exchangeId((short) localOrder.order.decoder.exchangeId())
@@ -366,12 +367,12 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         return report;
     }
 
-    private OrderExecutionReport rejected(CancelOrder cancel) {
+    private OrderExecutionReport cancelRejected(CancelOrder cancel) {
         OrderExecutionReport report = makeReport(
                 cancel.getClientOidCounter(),
                 cancel.getClientOidStrategyId(),
-                ExecType.REJECT,
-                OrderStatus.REJECTED,
+                ExecType.CANCEL_REJECT,
+                OrderStatus.NEW,
                 0,
                 0,
                 0,
@@ -381,12 +382,12 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         return report;
     }
 
-    private OrderExecutionReport rejected(ModifyOrder modify) {
+    private OrderExecutionReport cancelRejected(ModifyOrder modify) {
         OrderExecutionReport report = makeReport(
                 modify.getClientOidCounter(),
                 modify.getClientOidStrategyId(),
-                ExecType.REJECT,
-                OrderStatus.REJECTED,
+                ExecType.CANCEL_REJECT,
+                OrderStatus.NEW,
                 0,
                 0,
                 0,

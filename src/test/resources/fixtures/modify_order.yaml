@@ -1,0 +1,43 @@
+name: modify_order
+description: ASK order placed at 102/10, modified to 103/15, then fully filled by a buy trade
+initial_levels:
+  - bid_px: 98
+    bid_sz: 50
+    ask_px: 106
+    ask_sz: 40
+
+events:
+  - type: submit_order
+    order:
+      side: Ask
+      price: 102
+      size: 10
+      client_oid: ASK_1
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_1
+        leaves_qty: 10
+
+  - type: modify_order
+    client_oid: ASK_1
+    new_price: 103
+    new_size: 15
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_1
+        leaves_qty: 15
+
+  - type: trade
+    side: Bid
+    price: 103
+    size: 20
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_1
+        filled_qty: 15
+        leaves_qty: 0

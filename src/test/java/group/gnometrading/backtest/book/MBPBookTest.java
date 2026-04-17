@@ -476,6 +476,79 @@ class MBPBookTest {
         assertFalse(book.localAskOrders().containsKey(1L));
     }
 
+    // --- clearFills deque cleanup (Bug B regression tests) ---
+
+    @Test
+    void testClearFillsRemovesFromLevelDeque() {
+        // Local ask at 102 with no market depth — phantom=0
+        Order order = makeOrder(102, 8, Side.Ask, 1L);
+        book.addLocalOrder(order);
+
+        // Trade that fully fills the order
+        List<LocalOrderFill> fills = book.onTrade(102, 100, Side.Bid);
+
+        assertEquals(1, fills.size());
+        assertEquals(8, fills.get(0).fillSize());
+        assertEquals(0, fills.get(0).remainingAfterFill());
+
+        // Order removed from map
+        assertFalse(book.localAskOrders().containsKey(1L));
+        // Level cleaned up entirely (no market size, no local orders)
+        assertFalse(book.asks().containsKey(102L));
+    }
+
+    @Test
+    void testFullyFilledOrderDoesNotProduceDuplicateFillsOnSubsequentTrade() {
+        Order order = makeOrder(102, 8, Side.Ask, 1L);
+        book.addLocalOrder(order);
+
+        // First trade: fully fills the order
+        List<LocalOrderFill> fills1 = book.onTrade(102, 100, Side.Bid);
+        assertEquals(1, fills1.size());
+        assertEquals(8, fills1.get(0).fillSize());
+
+        // Second trade at the same price: stale order must not produce a duplicate fill
+        List<LocalOrderFill> fills2 = book.onTrade(102, 100, Side.Bid);
+        assertTrue(fills2.isEmpty());
+    }
+
+    @Test
+    void testFullyFilledOrderDoesNotProduceDuplicateFillsOnSubsequentMarketUpdate() {
+        // Local bid at 105, no market depth yet — phantom=0
+        Order order = makeOrder(105, 8, Side.Bid, 1L);
+        book.addLocalOrder(order);
+
+        // Market update crosses the book: ask drops to 103, best bid is our 105
+        List<BidAskLevel> levels = List.of(makeBidAskLevel(100, 30, 103, 20));
+        List<LocalOrderFill> fills1 = book.onMarketUpdate(levels);
+        assertEquals(1, fills1.size());
+        assertEquals(8, fills1.get(0).fillSize());
+
+        // Same market state again: stale order must not be re-filled
+        List<LocalOrderFill> fills2 = book.onMarketUpdate(levels);
+        assertTrue(fills2.isEmpty());
+    }
+
+    @Test
+    void testPartialFillLeavesOrderInDeque() {
+        Order order = makeOrder(102, 10, Side.Ask, 1L);
+        book.addLocalOrder(order);
+
+        // Partial fill: 5 of 10 units
+        List<LocalOrderFill> fills = book.onTrade(102, 5, Side.Bid);
+
+        assertEquals(1, fills.size());
+        assertEquals(5, fills.get(0).fillSize());
+        assertEquals(5, fills.get(0).remainingAfterFill());
+
+        // Order still in map with updated remaining
+        assertTrue(book.localAskOrders().containsKey(1L));
+        assertEquals(5, book.localAskOrders().get(1L).remaining);
+
+        // Order still in the level's deque
+        assertTrue(book.asks().get(102L).hasLocalOrders());
+    }
+
     // --- Trade edge cases ---
 
     @Test

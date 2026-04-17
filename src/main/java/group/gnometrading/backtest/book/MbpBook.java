@@ -392,8 +392,22 @@ public final class MbpBook {
             LocalOrder lo = fill.localOrder();
             if (lo.remaining == 0) {
                 long clientOid = lo.order.getClientOidCounter();
-                localBidOrders.remove(clientOid);
-                localAskOrders.remove(clientOid);
+                Side side = lo.order.decoder.side();
+                boolean isBid = side == Side.Bid;
+                if (isBid) {
+                    localBidOrders.remove(clientOid);
+                } else {
+                    localAskOrders.remove(clientOid);
+                }
+                long price = lo.order.decoder.price();
+                TreeMap<Long, OrderBookLevel> book = isBid ? bids : asks;
+                OrderBookLevel level = book.get(price);
+                if (level != null) {
+                    level.localOrders.remove(lo);
+                    if (level.size == 0 && !level.hasLocalOrders()) {
+                        book.remove(price);
+                    }
+                }
             }
         }
     }

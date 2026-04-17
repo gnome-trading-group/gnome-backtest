@@ -1,0 +1,17 @@
+name: tif_fok_no_fill
+description: FOK limit order with no matching liquidity is immediately rejected
+initial_levels: []
+
+events:
+  - type: submit_order
+    order:
+      side: Ask
+      price: 102
+      size: 10
+      client_oid: FOK_1
+      order_type: LIMIT
+      tif: FOK
+    expected_reports:
+      - exec_type: REJECT
+        order_status: REJECTED
+        client_oid: FOK_1

@@ -71,6 +71,44 @@ class BacktestDriverIntegrationTest {
         assertTrue(callback.signalCount > 0, "Strategy never produced a signal — check warmup or data quality");
     }
 
+    @Test
+    void marketMakerRapidQuotesReproducesUnknownExecReport() throws Exception {
+        String apiKey = System.getenv("GNOME_REGISTRY_API_KEY");
+        assumeTrue(apiKey != null && !apiKey.isBlank(), "GNOME_REGISTRY_API_KEY not set — skipping integration test");
+
+        SecurityMaster securityMaster = new SecurityMaster(new RegistryConnection(REGISTRY_HOST, apiKey));
+
+        BacktestConfig config = new BacktestConfig();
+        config.startDate = LocalDateTime.of(2026, 1, 23, 10, 30);
+        config.endDate = LocalDateTime.of(2026, 1, 23, 13, 0);
+        config.risk = new RiskConfig();
+        config.record = false;
+        config.recordDepth = 1;
+
+        ListingSimConfig lsc = new ListingSimConfig();
+        lsc.listingId = LISTING_ID;
+        lsc.profile = "default";
+        config.listings = List.of(lsc);
+        config.profiles = Map.of("default", new ExchangeProfileConfig());
+
+        OrderManagementSystem oms = BacktestDriverFactory.buildOms(config.risk, securityMaster);
+        PositionView positionView = oms.getPositionTracker().createPositionView(0);
+
+        SpammingMarketMakerCallback callback = new SpammingMarketMakerCallback();
+        PythonStrategyAgent strategy = PythonStrategyAgent.create(positionView, callback);
+
+        BacktestRecorder recorder = new BacktestRecorder(config.recordDepth);
+        S3Client s3Client = S3Client.create();
+
+        BacktestDriver driver = BacktestDriverFactory.create(config, securityMaster, oms, strategy, recorder, s3Client);
+        driver.prepareData();
+        driver.fullyExecute();
+
+        assertTrue(
+                driver.getEventsProcessed() > 0,
+                "No events processed — market data may be missing for this date range");
+    }
+
     /**
      * Simple momentum taker: after a warmup period, buys when mid is trending up and sells
      * when trending down, using aggressive market IOC orders.
@@ -138,6 +176,66 @@ class BacktestDriverIntegrationTest {
                     .takeSide(takeSide)
                     .takeSize(1L)
                     .takeOrderType(OrderType.MARKET)
+                    .takeLimitPrice(IntentDecoder.takeLimitPriceNullValue());
+            intent.encoder.flags().clear();
+            return intent;
+        }
+    }
+
+    /**
+     * Spams tight two-sided LIMIT quotes every tick — mirrors the Python MarketMaker's
+     * behavior that triggers the ordering race between NEW acks and fills on resting
+     * local orders. Matches mm_btc_30m.yaml parameters to maximise fidelity to the
+     * failing notebook.
+     */
+    static class SpammingMarketMakerCallback implements PythonStrategyAgent.PythonStrategyCallback {
+
+        private static final int WARMUP_TICKS = 5;
+        private static final long PRICE_NULL = Mbp10Decoder.priceNullValue();
+        private static final long QUOTE_SIZE = 100_000L;
+        private static final double HALF_SPREAD_BPS = 0.025; // min_spread_bps: 0.05 / 2
+
+        private int tickCount = 0;
+
+        @Override
+        public List<Intent> onMarketData(Schema data) {
+            if (!(data instanceof Mbp10Schema mbp10)) return List.of();
+            long bid = mbp10.decoder.bidPrice0();
+            long ask = mbp10.decoder.askPrice0();
+            if (bid == PRICE_NULL || ask == PRICE_NULL || bid <= 0 || ask <= 0) return List.of();
+            tickCount++;
+            if (tickCount <= WARMUP_TICKS) return List.of();
+
+            long mid = (bid + ask) / 2;
+            long halfSpread = (long) (mid * HALF_SPREAD_BPS / 10_000d);
+            if (halfSpread <= 0) halfSpread = 1;
+
+            return List.of(buildQuoteIntent(mbp10, mid - halfSpread, mid + halfSpread));
+        }
+
+        @Override
+        public List<Intent> onExecutionReport(OrderExecutionReport report) {
+            return List.of();
+        }
+
+        @Override
+        public long simulateProcessingTime() {
+            return 500_000L;
+        }
+
+        private static Intent buildQuoteIntent(Mbp10Schema schema, long bidPx, long askPx) {
+            Intent intent = new Intent();
+            intent.encoder
+                    .exchangeId((short) schema.decoder.exchangeId())
+                    .securityId(schema.decoder.securityId())
+                    .strategyId(0)
+                    .bidPrice(bidPx)
+                    .bidSize(QUOTE_SIZE)
+                    .askPrice(askPx)
+                    .askSize(QUOTE_SIZE)
+                    .takeSide(Side.None)
+                    .takeSize(IntentDecoder.takeSizeNullValue())
+                    .takeOrderType(OrderType.NULL_VAL)
                     .takeLimitPrice(IntentDecoder.takeLimitPriceNullValue());
             intent.encoder.flags().clear();
             return intent;

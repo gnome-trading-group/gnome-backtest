@@ -12,6 +12,7 @@ import java.util.ArrayDeque;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -141,6 +142,57 @@ class QueueModelTest {
                         List.of(new ExpectedFill(1L, 2)),
                         List.of(new LocalOrderSpec(0, -2, 3), new LocalOrderSpec(3, 2, 3), new LocalOrderSpec(4, 2, 3)),
                         List.of(2L, 3L)));
+    }
+
+    @Test
+    void testRemainingAfterFillIsSnapshotted() {
+        DummyQueueModel model = new DummyQueueModel();
+        ArrayDeque<LocalOrder> deque = new ArrayDeque<>();
+
+        Order orderA = new Order();
+        orderA.encoder
+                .exchangeId((short) 1)
+                .securityId(1)
+                .price(10000L)
+                .size(10L)
+                .side(Side.Bid)
+                .orderType(OrderType.LIMIT)
+                .timeInForce(TimeInForce.GOOD_TILL_CANCELED);
+        orderA.encodeClientOid(1L, 0);
+        LocalOrder loA = new LocalOrder(orderA, 5, 0);
+        deque.addLast(loA);
+
+        Order orderB = new Order();
+        orderB.encoder
+                .exchangeId((short) 1)
+                .securityId(1)
+                .price(10000L)
+                .size(10L)
+                .side(Side.Bid)
+                .orderType(OrderType.LIMIT)
+                .timeInForce(TimeInForce.GOOD_TILL_CANCELED);
+        orderB.encodeClientOid(2L, 0);
+        LocalOrder loB = new LocalOrder(orderB, 10, 0);
+        deque.addLast(loB);
+
+        // Trade 8: fully fills A (5 units), then partially fills B (3 units)
+        List<LocalOrderFill> fills = model.onTrade(8, deque);
+
+        assertEquals(2, fills.size());
+
+        // Fill A: 5 units, remaining snapshotted as 0 at fill time
+        assertEquals(1L, fills.get(0).localOrder().order.getClientOidCounter());
+        assertEquals(5, fills.get(0).fillSize());
+        assertEquals(0, fills.get(0).remainingAfterFill());
+
+        // Fill B: 3 units, remaining snapshotted as 7 at fill time (not 0)
+        assertEquals(2L, fills.get(1).localOrder().order.getClientOidCounter());
+        assertEquals(3, fills.get(1).fillSize());
+        assertEquals(7, fills.get(1).remainingAfterFill());
+
+        // Confirm the mutable LocalOrder state is as expected
+        assertEquals(0, loA.remaining);
+        assertEquals(7, loB.remaining);
     }
 
     @ParameterizedTest

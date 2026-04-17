@@ -36,7 +36,7 @@ public interface QueueModel {
                 long filledQty = Math.min(localOrder.remaining, remainingVolume);
                 remainingVolume -= filledQty;
                 localOrder.remaining -= filledQty;
-                filledOrders.add(new LocalOrderFill(localOrder, filledQty));
+                filledOrders.add(new LocalOrderFill(localOrder, filledQty, localOrder.remaining));
                 if (localOrder.remaining == 0) {
                     localQueue.poll();
                 }

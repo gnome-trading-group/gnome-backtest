@@ -390,6 +390,65 @@ class MBPMarketDataTest {
         assertEquals(ExecType.FILL, reports.get(1).decoder.execType());
     }
 
+    // --- Multi-level fill ExecType correctness (Bug A regression tests) ---
+
+    @Test
+    void testMultiLevelFillProducesPartialThenFull() {
+        // Submit local bid at 103 before any market data — no matches, rests on book
+        Order bid = makeOrder(103, 8, Side.Bid, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
+        exchange.submitOrder(bid);
+
+        // Market update: ask@101/5 and ask@102/10 cross our local bid at 103.
+        // checkBidFills iterates ask levels in order: 5 units from ask@101 → PARTIAL_FILL,
+        // then 3 units from ask@102 → FILL.
+        List<OrderExecutionReport> reports =
+                exchange.onMarketData(makeMarketUpdate(Action.Add, 100, 50, 101, 5, PRICE_NULL, -1, 102, 10));
+
+        assertEquals(2, reports.size());
+
+        OrderExecutionReport partial = reports.get(0);
+        assertEquals(1L, partial.getClientOidCounter());
+        assertEquals(ExecType.PARTIAL_FILL, partial.decoder.execType());
+        assertEquals(OrderStatus.PARTIALLY_FILLED, partial.decoder.orderStatus());
+        assertEquals(5, partial.decoder.filledQty());
+        assertEquals(3, partial.decoder.leavesQty());
+
+        OrderExecutionReport fill = reports.get(1);
+        assertEquals(1L, fill.getClientOidCounter());
+        assertEquals(ExecType.FILL, fill.decoder.execType());
+        assertEquals(OrderStatus.FILLED, fill.decoder.orderStatus());
+        assertEquals(3, fill.decoder.filledQty());
+        assertEquals(0, fill.decoder.leavesQty());
+    }
+
+    @Test
+    void testMultiLevelFillCumulativeQtyIsCorrect() {
+        Order bid = makeOrder(103, 8, Side.Bid, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
+        exchange.submitOrder(bid);
+
+        List<OrderExecutionReport> reports =
+                exchange.onMarketData(makeMarketUpdate(Action.Add, 100, 50, 101, 5, PRICE_NULL, -1, 102, 10));
+
+        assertEquals(2, reports.size());
+        assertEquals(5, reports.get(0).decoder.cumulativeQty());
+        assertEquals(8, reports.get(1).decoder.cumulativeQty());
+    }
+
+    @Test
+    void testSingleLevelFullFillIsExecTypeFill() {
+        // Regression: single-level fill should still produce ExecType.FILL (not PARTIAL_FILL)
+        Order bid = makeOrder(103, 5, Side.Bid, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
+        exchange.submitOrder(bid);
+
+        List<OrderExecutionReport> reports = exchange.onMarketData(makeSingleLevelUpdate(100, 50, 101, 20));
+
+        assertEquals(1, reports.size());
+        assertEquals(ExecType.FILL, reports.get(0).decoder.execType());
+        assertEquals(OrderStatus.FILLED, reports.get(0).decoder.orderStatus());
+        assertEquals(5, reports.get(0).decoder.filledQty());
+        assertEquals(0, reports.get(0).decoder.leavesQty());
+    }
+
     @Test
     void testMarketUpdateWithCrossedBookProducesFills() {
         // Place local ask at 100 (new level, phantom=0)

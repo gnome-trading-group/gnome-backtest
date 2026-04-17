@@ -1,0 +1,40 @@
+name: multi_level_fill
+description: >-
+  Local bid at 103/8 fills across two ask levels from a single market update.
+  Verifies PARTIAL_FILL then FILL with correct leavesQty (Bug A regression).
+initial_levels: []
+
+events:
+  - type: submit_order
+    order:
+      side: Bid
+      price: 103
+      size: 8
+      client_oid: BID_1
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_1
+        leaves_qty: 8
+
+  - type: market_update
+    levels:
+      - ask_px: 101
+        ask_sz: 5
+      - ask_px: 102
+        ask_sz: 10
+    expected_reports:
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: BID_1
+        filled_qty: 5
+        leaves_qty: 3
+        cumulative_qty: 5
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_1
+        filled_qty: 3
+        leaves_qty: 0
+        cumulative_qty: 8

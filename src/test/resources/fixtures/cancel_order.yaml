@@ -1,0 +1,32 @@
+name: cancel_order
+description: GTC order is placed then cancelled; a subsequent cancel of the same OID returns CANCEL_REJECT
+initial_levels: []
+
+events:
+  - type: submit_order
+    order:
+      side: Bid
+      price: 100
+      size: 10
+      client_oid: BID_1
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_1
+        leaves_qty: 10
+
+  - type: cancel_order
+    client_oid: BID_1
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: BID_1
+
+  - type: cancel_order
+    client_oid: BID_1
+    expected_reports:
+      - exec_type: CANCEL_REJECT
+        order_status: NEW
+        client_oid: BID_1

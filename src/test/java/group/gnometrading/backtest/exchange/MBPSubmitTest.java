@@ -323,7 +323,7 @@ class MBPSubmitTest {
         List<OrderExecutionReport> reports = exchange.cancelOrder(cancel);
 
         assertEquals(1, reports.size());
-        assertEquals(ExecType.REJECT, reports.get(0).decoder.execType());
+        assertEquals(ExecType.CANCEL_REJECT, reports.get(0).decoder.execType());
     }
 
     @Test
@@ -507,8 +507,8 @@ class MBPSubmitTest {
         List<OrderExecutionReport> reports = exchange.modifyOrder(modify);
 
         assertEquals(1, reports.size());
-        assertEquals(ExecType.REJECT, reports.get(0).decoder.execType());
-        assertEquals(OrderStatus.REJECTED, reports.get(0).decoder.orderStatus());
+        assertEquals(ExecType.CANCEL_REJECT, reports.get(0).decoder.execType());
+        assertEquals(OrderStatus.NEW, reports.get(0).decoder.orderStatus());
     }
 
     // --- Input validation ---

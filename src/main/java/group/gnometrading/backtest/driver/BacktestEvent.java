@@ -8,7 +8,7 @@ public record BacktestEvent(long timestamp, EventType eventType, Object data) im
         if (cmp != 0) {
             return cmp;
         }
-        // Secondary ordering: EXCHANGE_MARKET_DATA before LOCAL_MARKET_DATA at same timestamp
+        // Secondary: EXCHANGE_MARKET_DATA < EXCHANGE_MESSAGE < LOCAL_MARKET_DATA < LOCAL_MESSAGE
         return Integer.compare(this.eventType.value, other.eventType.value);
     }
 }

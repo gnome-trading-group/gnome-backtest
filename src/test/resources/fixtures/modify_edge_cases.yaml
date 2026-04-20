@@ -1,0 +1,150 @@
+name: modify_edge_cases
+description: >-
+  Edge cases for modify_order: size-only change (no price), modify a partially
+  filled order with a size increase, and modify to a price that crosses the
+  opposite book (fill triggered on the next market_update).
+initial_levels: []
+
+events:
+
+  # ============================================================
+  # CASE 1: Modify size only (same price)
+  # ============================================================
+  - type: submit_order
+    order:
+      side: Bid
+      price: 100
+      size: 10
+      client_oid: BID_1
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_1
+        leaves_qty: 10
+
+  # Modify price unchanged (100), size 10 → 15
+  - type: modify_order
+    client_oid: BID_1
+    new_price: 100
+    new_size: 15
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_1
+        leaves_qty: 15
+
+  # Trade fills the full modified size
+  - type: trade
+    side: Ask
+    price: 100
+    size: 15
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_1
+        filled_qty: 15
+        leaves_qty: 0
+
+  # ============================================================
+  # CASE 2: Modify a partially filled order (size increase)
+  # ============================================================
+  - type: submit_order
+    order:
+      side: Bid
+      price: 100
+      size: 10
+      client_oid: BID_2
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_2
+        leaves_qty: 10
+
+  # Partial fill of 4 → remaining = 6
+  - type: trade
+    side: Ask
+    price: 100
+    size: 4
+    expected_reports:
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: BID_2
+        filled_qty: 4
+        leaves_qty: 6
+
+  # Modify size 10 → 13 while partially filled: sizeDiff=+3, remaining = 6+3 = 9
+  - type: modify_order
+    client_oid: BID_2
+    new_price: 100
+    new_size: 13
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_2
+        leaves_qty: 13
+
+  # Trade fills the 9 remaining units: cumulative = 13 - 0 = 13
+  - type: trade
+    side: Ask
+    price: 100
+    size: 10
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_2
+        filled_qty: 9
+        leaves_qty: 0
+        cumulative_qty: 13
+
+  # ============================================================
+  # CASE 3: Modify to a crossing price (fill on next market_update)
+  # ============================================================
+
+  # Seed asks at 105
+  - type: market_update
+    levels:
+      - ask_px: 105
+        ask_sz: 10
+    expected_reports: []
+
+  # Submit bid below the ask — rests passively
+  - type: submit_order
+    order:
+      side: Bid
+      price: 100
+      size: 8
+      client_oid: BID_3
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_3
+        leaves_qty: 8
+
+  # Modify price 100 → 106, now above the ask at 105
+  - type: modify_order
+    client_oid: BID_3
+    new_price: 106
+    new_size: 8
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_3
+        leaves_qty: 8
+
+  # Same market_update retriggers reconcile → book is crossed → fill
+  - type: market_update
+    levels:
+      - ask_px: 105
+        ask_sz: 10
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_3
+        filled_qty: 8
+        leaves_qty: 0

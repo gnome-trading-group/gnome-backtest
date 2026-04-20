@@ -1,0 +1,96 @@
+name: tif_ioc_with_liquidity
+description: >-
+  IOC limit orders against a book with liquidity.
+  Tests full fill (single FILL report) and partial fill
+  (PARTIAL_FILL + CANCEL with order_status=PARTIALLY_FILLED) on both sides.
+initial_levels:
+  - ask_px: 102
+    ask_sz: 10
+  - bid_px: 98
+    bid_sz: 10
+
+events:
+
+  # ============================================================
+  # IOC buy — full fill: size 8 <= ask depth 10
+  # ============================================================
+  - type: submit_order
+    order:
+      side: Bid
+      price: 102
+      size: 8
+      client_oid: IOC_BID_1
+      order_type: LIMIT
+      tif: IOC
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: IOC_BID_1
+        filled_qty: 8
+        leaves_qty: 0
+        cumulative_qty: 8
+
+  # IOC buy — partial fill: size 15 > ask depth 10 → PARTIAL_FILL + CANCEL
+  - type: submit_order
+    order:
+      side: Bid
+      price: 102
+      size: 15
+      client_oid: IOC_BID_2
+      order_type: LIMIT
+      tif: IOC
+    expected_reports:
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: IOC_BID_2
+        filled_qty: 10
+        leaves_qty: 5
+        cumulative_qty: 10
+      - exec_type: CANCEL
+        order_status: PARTIALLY_FILLED
+        client_oid: IOC_BID_2
+        filled_qty: 0
+        leaves_qty: 0
+        cumulative_qty: 10
+
+  # ============================================================
+  # IOC sell — full fill: size 6 <= bid depth 10
+  # ============================================================
+  - type: submit_order
+    order:
+      side: Ask
+      price: 98
+      size: 6
+      client_oid: IOC_ASK_1
+      order_type: LIMIT
+      tif: IOC
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: IOC_ASK_1
+        filled_qty: 6
+        leaves_qty: 0
+        cumulative_qty: 6
+
+  # IOC sell — partial fill: size 15 > bid depth 10 → PARTIAL_FILL + CANCEL
+  - type: submit_order
+    order:
+      side: Ask
+      price: 98
+      size: 15
+      client_oid: IOC_ASK_2
+      order_type: LIMIT
+      tif: IOC
+    expected_reports:
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: IOC_ASK_2
+        filled_qty: 10
+        leaves_qty: 5
+        cumulative_qty: 10
+      - exec_type: CANCEL
+        order_status: PARTIALLY_FILLED
+        client_oid: IOC_ASK_2
+        filled_qty: 0
+        leaves_qty: 0
+        cumulative_qty: 10

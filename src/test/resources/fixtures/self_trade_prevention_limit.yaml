@@ -1,0 +1,153 @@
+name: self_trade_prevention_limit
+description: >-
+  Aggressive limit orders are blocked when the opposite book level has a local
+  order (self-trade prevention). The blocked order gets NEW and rests on the
+  book. Once the local order on the opposite side is cancelled, the same
+  aggressive order CAN fill. Tests both buy-side and sell-side prevention.
+initial_levels:
+  - ask_px: 102
+    ask_sz: 10
+
+events:
+
+  # ============================================================
+  # BID SIDE: aggressive limit buy blocked by local ask
+  # ============================================================
+
+  # Place a local ask at 102 (same level as the market depth)
+  - type: submit_order
+    order:
+      side: Ask
+      price: 102
+      size: 5
+      client_oid: ASK_1
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_1
+        leaves_qty: 5
+
+  # Aggressive bid at 102 — would normally cross, but ask level has local orders.
+  # getMatchingOrders() returns empty → order rests on book with NEW (no fill).
+  - type: submit_order
+    order:
+      side: Bid
+      price: 102
+      size: 8
+      client_oid: BID_1
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_1
+        leaves_qty: 8
+
+  # Cancel the local ask — self-trade blocker removed
+  - type: cancel_order
+    client_oid: ASK_1
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: ASK_1
+
+  # Same aggressive bid now fills against market depth (size 10)
+  - type: submit_order
+    order:
+      side: Bid
+      price: 102
+      size: 8
+      client_oid: BID_2
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_2
+        filled_qty: 8
+        leaves_qty: 0
+        cumulative_qty: 8
+
+  # Cancel the resting BID_1 (never filled due to self-trade prevention)
+  - type: cancel_order
+    client_oid: BID_1
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: BID_1
+
+  # ============================================================
+  # ASK SIDE: aggressive limit sell blocked by local bid
+  # ============================================================
+
+  # Seed bid depth at 98
+  - type: market_update
+    levels:
+      - bid_px: 98
+        bid_sz: 10
+    expected_reports: []
+
+  # Place a local bid at 98
+  - type: submit_order
+    order:
+      side: Bid
+      price: 98
+      size: 7
+      client_oid: BID_3
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_3
+        leaves_qty: 7
+
+  # Aggressive ask at 98 — blocked by local bid → NEW (no fill)
+  - type: submit_order
+    order:
+      side: Ask
+      price: 98
+      size: 10
+      client_oid: ASK_2
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_2
+        leaves_qty: 10
+
+  # Cancel the local bid — blocker removed
+  - type: cancel_order
+    client_oid: BID_3
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: BID_3
+
+  # Same aggressive ask now fills against bid depth (size 10)
+  - type: submit_order
+    order:
+      side: Ask
+      price: 98
+      size: 10
+      client_oid: ASK_3
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_3
+        filled_qty: 10
+        leaves_qty: 0
+        cumulative_qty: 10
+
+  # Cancel the resting ASK_2 (never filled due to self-trade prevention)
+  - type: cancel_order
+    client_oid: ASK_2
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: ASK_2

@@ -1,0 +1,83 @@
+name: cancel_partial_fill
+description: >-
+  Cancel a GTC order that has been partially filled via trade.
+  Validates that cancel of a partially filled order returns
+  exec_type=CANCEL with order_status=CANCELED (not PARTIALLY_FILLED),
+  matching FIX protocol cancel semantics. Tests both bid and ask sides.
+initial_levels: []
+
+events:
+
+  # ============================================================
+  # BID SIDE
+  # ============================================================
+  - type: submit_order
+    order:
+      side: Bid
+      price: 100
+      size: 10
+      client_oid: BID_1
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_1
+        leaves_qty: 10
+
+  # Partial fill: trade of 5 fills 5 of 10
+  - type: trade
+    side: Ask
+    price: 100
+    size: 5
+    expected_reports:
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: BID_1
+        filled_qty: 5
+        leaves_qty: 5
+
+  # Cancel while partially filled — status is CANCELED, not PARTIALLY_FILLED
+  - type: cancel_order
+    client_oid: BID_1
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: BID_1
+
+  # ============================================================
+  # ASK SIDE
+  # ============================================================
+  - type: submit_order
+    order:
+      side: Ask
+      price: 100
+      size: 12
+      client_oid: ASK_1
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_1
+        leaves_qty: 12
+
+  # Partial fill: trade of 4 fills 4 of 12
+  - type: trade
+    side: Bid
+    price: 100
+    size: 4
+    expected_reports:
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: ASK_1
+        filled_qty: 4
+        leaves_qty: 8
+
+  # Cancel while partially filled
+  - type: cancel_order
+    client_oid: ASK_1
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: ASK_1

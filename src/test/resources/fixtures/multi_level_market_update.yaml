@@ -1,0 +1,118 @@
+name: multi_level_market_update
+description: >-
+  A single market_update containing 4 levels fills a local order across all
+  levels, producing one execution report per level. Tests both bid-side fills
+  (4-level ask update) and ask-side fills (4-level bid update, iterated
+  descending so best bid fills first).
+initial_levels: []
+
+events:
+
+  # ============================================================
+  # 4-level ask update fills BID_1 (size 30)
+  # ask 105/5 → ask 106/8 → ask 107/10 → ask 108/7 = 30 total
+  # ============================================================
+  - type: submit_order
+    order:
+      side: Bid
+      price: 110
+      size: 30
+      client_oid: BID_1
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_1
+        leaves_qty: 30
+
+  - type: market_update
+    levels:
+      - ask_px: 105
+        ask_sz: 5
+      - ask_px: 106
+        ask_sz: 8
+      - ask_px: 107
+        ask_sz: 10
+      - ask_px: 108
+        ask_sz: 7
+    expected_reports:
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: BID_1
+        filled_qty: 5
+        leaves_qty: 25
+        cumulative_qty: 5
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: BID_1
+        filled_qty: 8
+        leaves_qty: 17
+        cumulative_qty: 13
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: BID_1
+        filled_qty: 10
+        leaves_qty: 7
+        cumulative_qty: 23
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_1
+        filled_qty: 7
+        leaves_qty: 0
+        cumulative_qty: 30
+
+  # ============================================================
+  # 4-level bid update fills ASK_1 (size 34)
+  # Bids iterate descending (best first):
+  # bid 103/6 → bid 101/8 → bid 99/9 → bid 97/11 = 34 total
+  # ============================================================
+  - type: submit_order
+    order:
+      side: Ask
+      price: 97
+      size: 34
+      client_oid: ASK_1
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_1
+        leaves_qty: 34
+
+  - type: market_update
+    levels:
+      - bid_px: 103
+        bid_sz: 6
+      - bid_px: 101
+        bid_sz: 8
+      - bid_px: 99
+        bid_sz: 9
+      - bid_px: 97
+        bid_sz: 11
+    expected_reports:
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: ASK_1
+        filled_qty: 6
+        leaves_qty: 28
+        cumulative_qty: 6
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: ASK_1
+        filled_qty: 8
+        leaves_qty: 20
+        cumulative_qty: 14
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: ASK_1
+        filled_qty: 9
+        leaves_qty: 11
+        cumulative_qty: 23
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_1
+        filled_qty: 11
+        leaves_qty: 0
+        cumulative_qty: 34

@@ -1,0 +1,123 @@
+name: market_order_with_liquidity
+description: >-
+  Market orders against a book with resting liquidity.
+  Tests: full fill (single level), full fill (multi-level), partial fill
+  (insufficient total depth), and sell-side market orders.
+  Market orders produce exactly 1 report (FILL, PARTIAL_FILL, or REJECT).
+initial_levels:
+  - ask_px: 102
+    ask_sz: 10
+  - ask_px: 103
+    ask_sz: 15
+  - bid_px: 98
+    bid_sz: 8
+  - bid_px: 97
+    bid_sz: 12
+
+events:
+
+  # ============================================================
+  # MARKET BUY — full fill, single level (8 <= ask 102/10)
+  # ============================================================
+  - type: submit_order
+    order:
+      side: Bid
+      price: 0
+      size: 8
+      client_oid: MKT_BID_1
+      order_type: MARKET
+      tif: GTC
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: MKT_BID_1
+        filled_qty: 8
+        leaves_qty: 0
+        cumulative_qty: 8
+
+  # MARKET BUY — full fill, multi-level (20 = ask 102/10 + ask 103/10)
+  - type: submit_order
+    order:
+      side: Bid
+      price: 0
+      size: 20
+      client_oid: MKT_BID_2
+      order_type: MARKET
+      tif: GTC
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: MKT_BID_2
+        filled_qty: 20
+        leaves_qty: 0
+        cumulative_qty: 20
+
+  # MARKET BUY — partial fill (30 > total ask depth 25)
+  - type: submit_order
+    order:
+      side: Bid
+      price: 0
+      size: 30
+      client_oid: MKT_BID_3
+      order_type: MARKET
+      tif: GTC
+    expected_reports:
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: MKT_BID_3
+        filled_qty: 25
+        leaves_qty: 5
+        cumulative_qty: 25
+
+  # ============================================================
+  # MARKET SELL — full fill, single level (5 <= bid 98/8)
+  # ============================================================
+  - type: submit_order
+    order:
+      side: Ask
+      price: 0
+      size: 5
+      client_oid: MKT_ASK_1
+      order_type: MARKET
+      tif: GTC
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: MKT_ASK_1
+        filled_qty: 5
+        leaves_qty: 0
+        cumulative_qty: 5
+
+  # MARKET SELL — full fill, multi-level (15 = bid 98/8 + bid 97/7)
+  - type: submit_order
+    order:
+      side: Ask
+      price: 0
+      size: 15
+      client_oid: MKT_ASK_2
+      order_type: MARKET
+      tif: GTC
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: MKT_ASK_2
+        filled_qty: 15
+        leaves_qty: 0
+        cumulative_qty: 15
+
+  # MARKET SELL — partial fill (25 > total bid depth 20)
+  - type: submit_order
+    order:
+      side: Ask
+      price: 0
+      size: 25
+      client_oid: MKT_ASK_3
+      order_type: MARKET
+      tif: GTC
+    expected_reports:
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: MKT_ASK_3
+        filled_qty: 20
+        leaves_qty: 5
+        cumulative_qty: 20

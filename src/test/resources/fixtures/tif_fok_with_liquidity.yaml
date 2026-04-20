@@ -1,0 +1,113 @@
+name: tif_fok_with_liquidity
+description: >-
+  FOK limit orders against a book with liquidity.
+  Tests full fill (FILL), partial rejection (REJECT when book has depth but
+  insufficient for the full order size), and confirms book depth is not consumed
+  so a subsequent FOK can fill again.
+initial_levels:
+  - ask_px: 102
+    ask_sz: 10
+  - bid_px: 98
+    bid_sz: 8
+
+events:
+
+  # ============================================================
+  # FOK buy — full fill: size exactly equals ask depth
+  # ============================================================
+  - type: submit_order
+    order:
+      side: Bid
+      price: 102
+      size: 10
+      client_oid: FOK_BID_1
+      order_type: LIMIT
+      tif: FOK
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: FOK_BID_1
+        filled_qty: 10
+        leaves_qty: 0
+        cumulative_qty: 10
+
+  # FOK buy — partial rejection: size 15 > ask depth 10 → REJECT
+  - type: submit_order
+    order:
+      side: Bid
+      price: 102
+      size: 15
+      client_oid: FOK_BID_2
+      order_type: LIMIT
+      tif: FOK
+    expected_reports:
+      - exec_type: REJECT
+        order_status: REJECTED
+        client_oid: FOK_BID_2
+
+  # FOK buy — full fill again: book depth was not consumed, still 10 available
+  - type: submit_order
+    order:
+      side: Bid
+      price: 102
+      size: 8
+      client_oid: FOK_BID_3
+      order_type: LIMIT
+      tif: FOK
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: FOK_BID_3
+        filled_qty: 8
+        leaves_qty: 0
+        cumulative_qty: 8
+
+  # ============================================================
+  # FOK sell — full fill: size equals bid depth
+  # ============================================================
+  - type: submit_order
+    order:
+      side: Ask
+      price: 98
+      size: 8
+      client_oid: FOK_ASK_1
+      order_type: LIMIT
+      tif: FOK
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: FOK_ASK_1
+        filled_qty: 8
+        leaves_qty: 0
+        cumulative_qty: 8
+
+  # FOK sell — partial rejection: size 12 > bid depth 8 → REJECT
+  - type: submit_order
+    order:
+      side: Ask
+      price: 98
+      size: 12
+      client_oid: FOK_ASK_2
+      order_type: LIMIT
+      tif: FOK
+    expected_reports:
+      - exec_type: REJECT
+        order_status: REJECTED
+        client_oid: FOK_ASK_2
+
+  # FOK sell — full fill again: depth not consumed
+  - type: submit_order
+    order:
+      side: Ask
+      price: 98
+      size: 5
+      client_oid: FOK_ASK_3
+      order_type: LIMIT
+      tif: FOK
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: FOK_ASK_3
+        filled_qty: 5
+        leaves_qty: 0
+        cumulative_qty: 5

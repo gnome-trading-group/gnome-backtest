@@ -1,0 +1,120 @@
+name: aggressive_limit_cross
+description: >-
+  Aggressive limit orders that immediately cross resting market depth.
+  Tests full cross (FILL), partial cross with GTC remainder (NEW + PARTIAL_FILL),
+  and subsequent trade filling the resting remainder — for both bid and ask sides.
+initial_levels:
+  - ask_px: 102
+    ask_sz: 10
+  - bid_px: 98
+    bid_sz: 10
+
+events:
+
+  # ============================================================
+  # BID SIDE — aggressive limit buy
+  # ============================================================
+
+  # Full cross: size 8 <= ask depth 10 → FILL
+  - type: submit_order
+    order:
+      side: Bid
+      price: 102
+      size: 8
+      client_oid: BID_1
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_1
+        filled_qty: 8
+        leaves_qty: 0
+        cumulative_qty: 8
+
+  # Partial cross: size 15 > ask depth 10 → NEW + PARTIAL_FILL; remainder 5 rests
+  - type: submit_order
+    order:
+      side: Bid
+      price: 102
+      size: 15
+      client_oid: BID_2
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_2
+        leaves_qty: 15
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: BID_2
+        filled_qty: 10
+        leaves_qty: 5
+        cumulative_qty: 10
+
+  # Trade fills the resting remainder of BID_2
+  - type: trade
+    side: Ask
+    price: 102
+    size: 10
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_2
+        filled_qty: 5
+        leaves_qty: 0
+
+  # ============================================================
+  # ASK SIDE — aggressive limit sell
+  # ============================================================
+
+  # Full cross: size 6 <= bid depth 10 → FILL
+  - type: submit_order
+    order:
+      side: Ask
+      price: 98
+      size: 6
+      client_oid: ASK_1
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_1
+        filled_qty: 6
+        leaves_qty: 0
+        cumulative_qty: 6
+
+  # Partial cross: size 15 > bid depth 10 → NEW + PARTIAL_FILL; remainder 5 rests
+  - type: submit_order
+    order:
+      side: Ask
+      price: 98
+      size: 15
+      client_oid: ASK_2
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_2
+        leaves_qty: 15
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: ASK_2
+        filled_qty: 10
+        leaves_qty: 5
+        cumulative_qty: 10
+
+  # Trade fills the resting remainder of ASK_2
+  - type: trade
+    side: Bid
+    price: 98
+    size: 10
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_2
+        filled_qty: 5
+        leaves_qty: 0

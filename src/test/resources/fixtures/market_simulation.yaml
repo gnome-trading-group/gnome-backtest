@@ -1,0 +1,2228 @@
+name: market_simulation
+description: >-
+  Multi-phase market simulation: 170+ events spanning bid/ask ladders,
+  progressive fills via trades and market updates, partial fills, cancels,
+  modifies, multi-level fills, IOC/FOK rejections, and CANCEL_REJECT for
+  post-fill operations. Stress test for MbpSimulatedExchange.
+initial_levels: []
+
+events:
+
+  # ============================================================
+  # PHASE 1 — Bid ladder (BID_01 to BID_20, prices 80–99)
+  # ============================================================
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 99
+      size: 10
+      client_oid: BID_01
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_01
+        leaves_qty: 10
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 98
+      size: 12
+      client_oid: BID_02
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_02
+        leaves_qty: 12
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 97
+      size: 8
+      client_oid: BID_03
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_03
+        leaves_qty: 8
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 96
+      size: 15
+      client_oid: BID_04
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_04
+        leaves_qty: 15
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 95
+      size: 20
+      client_oid: BID_05
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_05
+        leaves_qty: 20
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 94
+      size: 6
+      client_oid: BID_06
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_06
+        leaves_qty: 6
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 93
+      size: 18
+      client_oid: BID_07
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_07
+        leaves_qty: 18
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 92
+      size: 9
+      client_oid: BID_08
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_08
+        leaves_qty: 9
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 91
+      size: 14
+      client_oid: BID_09
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_09
+        leaves_qty: 14
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 90
+      size: 7
+      client_oid: BID_10
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_10
+        leaves_qty: 7
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 89
+      size: 25
+      client_oid: BID_11
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_11
+        leaves_qty: 25
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 88
+      size: 11
+      client_oid: BID_12
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_12
+        leaves_qty: 11
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 87
+      size: 16
+      client_oid: BID_13
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_13
+        leaves_qty: 16
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 86
+      size: 22
+      client_oid: BID_14
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_14
+        leaves_qty: 22
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 85
+      size: 5
+      client_oid: BID_15
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_15
+        leaves_qty: 5
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 84
+      size: 13
+      client_oid: BID_16
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_16
+        leaves_qty: 13
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 83
+      size: 19
+      client_oid: BID_17
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_17
+        leaves_qty: 19
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 82
+      size: 8
+      client_oid: BID_18
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_18
+        leaves_qty: 8
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 81
+      size: 30
+      client_oid: BID_19
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_19
+        leaves_qty: 30
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 80
+      size: 17
+      client_oid: BID_20
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_20
+        leaves_qty: 17
+
+  # ============================================================
+  # PHASE 2 — Ask ladder (ASK_01 to ASK_20, prices 101–120)
+  # ============================================================
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 101
+      size: 10
+      client_oid: ASK_01
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_01
+        leaves_qty: 10
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 102
+      size: 12
+      client_oid: ASK_02
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_02
+        leaves_qty: 12
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 103
+      size: 8
+      client_oid: ASK_03
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_03
+        leaves_qty: 8
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 104
+      size: 15
+      client_oid: ASK_04
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_04
+        leaves_qty: 15
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 105
+      size: 20
+      client_oid: ASK_05
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_05
+        leaves_qty: 20
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 106
+      size: 6
+      client_oid: ASK_06
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_06
+        leaves_qty: 6
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 107
+      size: 18
+      client_oid: ASK_07
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_07
+        leaves_qty: 18
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 108
+      size: 9
+      client_oid: ASK_08
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_08
+        leaves_qty: 9
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 109
+      size: 14
+      client_oid: ASK_09
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_09
+        leaves_qty: 14
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 110
+      size: 7
+      client_oid: ASK_10
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_10
+        leaves_qty: 7
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 111
+      size: 25
+      client_oid: ASK_11
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_11
+        leaves_qty: 25
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 112
+      size: 11
+      client_oid: ASK_12
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_12
+        leaves_qty: 11
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 113
+      size: 16
+      client_oid: ASK_13
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_13
+        leaves_qty: 16
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 114
+      size: 22
+      client_oid: ASK_14
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_14
+        leaves_qty: 22
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 115
+      size: 5
+      client_oid: ASK_15
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_15
+        leaves_qty: 5
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 116
+      size: 13
+      client_oid: ASK_16
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_16
+        leaves_qty: 13
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 117
+      size: 19
+      client_oid: ASK_17
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_17
+        leaves_qty: 19
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 118
+      size: 8
+      client_oid: ASK_18
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_18
+        leaves_qty: 8
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 119
+      size: 30
+      client_oid: ASK_19
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_19
+        leaves_qty: 30
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 120
+      size: 17
+      client_oid: ASK_20
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_20
+        leaves_qty: 17
+
+  # ============================================================
+  # PHASE 3 — Sell pressure: Ask-side trades fill bids 01–10
+  # (phantom=0 throughout; trade size > order size → FILL)
+  # BID_09 receives only a partial fill here.
+  # ============================================================
+
+  - type: trade
+    side: Ask
+    price: 99
+    size: 15
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_01
+        filled_qty: 10
+        leaves_qty: 0
+
+  - type: trade
+    side: Ask
+    price: 98
+    size: 15
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_02
+        filled_qty: 12
+        leaves_qty: 0
+
+  - type: trade
+    side: Ask
+    price: 97
+    size: 10
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_03
+        filled_qty: 8
+        leaves_qty: 0
+
+  - type: trade
+    side: Ask
+    price: 96
+    size: 20
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_04
+        filled_qty: 15
+        leaves_qty: 0
+
+  - type: trade
+    side: Ask
+    price: 95
+    size: 25
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_05
+        filled_qty: 20
+        leaves_qty: 0
+
+  - type: trade
+    side: Ask
+    price: 94
+    size: 8
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_06
+        filled_qty: 6
+        leaves_qty: 0
+
+  - type: trade
+    side: Ask
+    price: 93
+    size: 20
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_07
+        filled_qty: 18
+        leaves_qty: 0
+
+  - type: trade
+    side: Ask
+    price: 92
+    size: 12
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_08
+        filled_qty: 9
+        leaves_qty: 0
+
+  - type: trade
+    side: Ask
+    price: 91
+    size: 8
+    expected_reports:
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: BID_09
+        filled_qty: 8
+        leaves_qty: 6
+
+  - type: trade
+    side: Ask
+    price: 90
+    size: 10
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_09
+        filled_qty: 6
+        leaves_qty: 0
+        cumulative_qty: 14
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: BID_10
+        filled_qty: 4
+        leaves_qty: 3
+        cumulative_qty: 4
+
+  # ============================================================
+  # PHASE 4 — Buy pressure: Bid-side trades fill asks 01–10
+  # ASK_03 receives a partial fill (5 of 8).
+  # ASK_09 receives a partial fill (8 of 14).
+  # ============================================================
+
+  - type: trade
+    side: Bid
+    price: 101
+    size: 15
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_01
+        filled_qty: 10
+        leaves_qty: 0
+
+  - type: trade
+    side: Bid
+    price: 102
+    size: 15
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_02
+        filled_qty: 12
+        leaves_qty: 0
+
+  - type: trade
+    side: Bid
+    price: 103
+    size: 5
+    expected_reports:
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: ASK_03
+        filled_qty: 5
+        leaves_qty: 3
+
+  - type: trade
+    side: Bid
+    price: 104
+    size: 20
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_03
+        filled_qty: 3
+        leaves_qty: 0
+        cumulative_qty: 8
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_04
+        filled_qty: 15
+        leaves_qty: 0
+
+  - type: trade
+    side: Bid
+    price: 105
+    size: 25
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_05
+        filled_qty: 20
+        leaves_qty: 0
+
+  - type: trade
+    side: Bid
+    price: 106
+    size: 8
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_06
+        filled_qty: 6
+        leaves_qty: 0
+
+  - type: trade
+    side: Bid
+    price: 107
+    size: 20
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_07
+        filled_qty: 18
+        leaves_qty: 0
+
+  - type: trade
+    side: Bid
+    price: 108
+    size: 12
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_08
+        filled_qty: 9
+        leaves_qty: 0
+
+  - type: trade
+    side: Bid
+    price: 109
+    size: 8
+    expected_reports:
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: ASK_09
+        filled_qty: 8
+        leaves_qty: 6
+
+  - type: trade
+    side: Bid
+    price: 110
+    size: 10
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_09
+        filled_qty: 6
+        leaves_qty: 0
+        cumulative_qty: 14
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: ASK_10
+        filled_qty: 4
+        leaves_qty: 3
+        cumulative_qty: 4
+
+  # ============================================================
+  # PHASE 5 — Cancel partially filled and unfilled orders
+  # ============================================================
+
+  - type: cancel_order
+    client_oid: BID_09
+    expected_reports:
+      - exec_type: CANCEL_REJECT
+        order_status: NEW
+        client_oid: BID_09
+
+  - type: cancel_order
+    client_oid: ASK_03
+    expected_reports:
+      - exec_type: CANCEL_REJECT
+        order_status: NEW
+        client_oid: ASK_03
+
+  - type: cancel_order
+    client_oid: ASK_09
+    expected_reports:
+      - exec_type: CANCEL_REJECT
+        order_status: NEW
+        client_oid: ASK_09
+
+  - type: cancel_order
+    client_oid: BID_10
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: BID_10
+
+  - type: cancel_order
+    client_oid: ASK_10
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: ASK_10
+
+  - type: cancel_order
+    client_oid: BID_11
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: BID_11
+
+  - type: cancel_order
+    client_oid: BID_12
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: BID_12
+
+  - type: cancel_order
+    client_oid: BID_13
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: BID_13
+
+  - type: cancel_order
+    client_oid: BID_14
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: BID_14
+
+  - type: cancel_order
+    client_oid: BID_15
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: BID_15
+
+  - type: cancel_order
+    client_oid: BID_16
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: BID_16
+
+  - type: cancel_order
+    client_oid: BID_17
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: BID_17
+
+  - type: cancel_order
+    client_oid: BID_18
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: BID_18
+
+  - type: cancel_order
+    client_oid: BID_19
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: BID_19
+
+  - type: cancel_order
+    client_oid: BID_20
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: BID_20
+
+  - type: cancel_order
+    client_oid: ASK_11
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: ASK_11
+
+  - type: cancel_order
+    client_oid: ASK_12
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: ASK_12
+
+  - type: cancel_order
+    client_oid: ASK_13
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: ASK_13
+
+  - type: cancel_order
+    client_oid: ASK_14
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: ASK_14
+
+  - type: cancel_order
+    client_oid: ASK_15
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: ASK_15
+
+  - type: cancel_order
+    client_oid: ASK_16
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: ASK_16
+
+  - type: cancel_order
+    client_oid: ASK_17
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: ASK_17
+
+  - type: cancel_order
+    client_oid: ASK_18
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: ASK_18
+
+  - type: cancel_order
+    client_oid: ASK_19
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: ASK_19
+
+  - type: cancel_order
+    client_oid: ASK_20
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: ASK_20
+
+  # ============================================================
+  # PHASE 6 — Second wave of orders at adjusted prices
+  # (market has rallied; bids 104–108, asks 117–122)
+  # ============================================================
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 108
+      size: 10
+      client_oid: BID_21
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_21
+        leaves_qty: 10
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 107
+      size: 15
+      client_oid: BID_22
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_22
+        leaves_qty: 15
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 106
+      size: 8
+      client_oid: BID_23
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_23
+        leaves_qty: 8
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 105
+      size: 20
+      client_oid: BID_24
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_24
+        leaves_qty: 20
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 104
+      size: 12
+      client_oid: BID_25
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_25
+        leaves_qty: 12
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 118
+      size: 10
+      client_oid: ASK_21
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_21
+        leaves_qty: 10
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 119
+      size: 15
+      client_oid: ASK_22
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_22
+        leaves_qty: 15
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 120
+      size: 8
+      client_oid: ASK_23
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_23
+        leaves_qty: 8
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 121
+      size: 20
+      client_oid: ASK_24
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_24
+        leaves_qty: 20
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 122
+      size: 12
+      client_oid: ASK_25
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_25
+        leaves_qty: 12
+
+  # ============================================================
+  # PHASE 7 — Modify orders to improve prices
+  # ============================================================
+
+  - type: modify_order
+    client_oid: BID_21
+    new_price: 109
+    new_size: 12
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_21
+        leaves_qty: 12
+
+  - type: modify_order
+    client_oid: BID_22
+    new_price: 108
+    new_size: 15
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_22
+        leaves_qty: 15
+
+  - type: modify_order
+    client_oid: ASK_21
+    new_price: 117
+    new_size: 10
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_21
+        leaves_qty: 10
+
+  - type: modify_order
+    client_oid: ASK_22
+    new_price: 118
+    new_size: 15
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_22
+        leaves_qty: 15
+
+  # ============================================================
+  # PHASE 8a — Market updates fill bids 21–25 via crossing asks
+  # Each single-level update crosses exactly one local bid.
+  # ============================================================
+
+  - type: market_update
+    levels:
+      - ask_px: 109
+        ask_sz: 15
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_21
+        filled_qty: 12
+        leaves_qty: 0
+
+  - type: market_update
+    levels:
+      - ask_px: 108
+        ask_sz: 20
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_22
+        filled_qty: 15
+        leaves_qty: 0
+
+  - type: market_update
+    levels:
+      - ask_px: 106
+        ask_sz: 10
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_23
+        filled_qty: 8
+        leaves_qty: 0
+
+  - type: market_update
+    levels:
+      - ask_px: 105
+        ask_sz: 25
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_24
+        filled_qty: 20
+        leaves_qty: 0
+
+  - type: market_update
+    levels:
+      - ask_px: 104
+        ask_sz: 12
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_25
+        filled_qty: 12
+        leaves_qty: 0
+
+  # ============================================================
+  # PHASE 8b — Market updates fill asks 21–25 via crossing bids
+  # ============================================================
+
+  - type: market_update
+    levels:
+      - bid_px: 117
+        bid_sz: 12
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_21
+        filled_qty: 10
+        leaves_qty: 0
+
+  - type: market_update
+    levels:
+      - bid_px: 118
+        bid_sz: 18
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_22
+        filled_qty: 15
+        leaves_qty: 0
+
+  - type: market_update
+    levels:
+      - bid_px: 120
+        bid_sz: 10
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_23
+        filled_qty: 8
+        leaves_qty: 0
+
+  - type: market_update
+    levels:
+      - bid_px: 121
+        bid_sz: 25
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_24
+        filled_qty: 20
+        leaves_qty: 0
+
+  - type: market_update
+    levels:
+      - bid_px: 122
+        bid_sz: 12
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_25
+        filled_qty: 12
+        leaves_qty: 0
+
+  # ============================================================
+  # PHASE 9 — Multi-level fill setup: place BID_26 and ASK_26
+  # ============================================================
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 130
+      size: 20
+      client_oid: BID_26
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_26
+        leaves_qty: 20
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 100
+      size: 20
+      client_oid: ASK_26
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_26
+        leaves_qty: 20
+
+  # ============================================================
+  # PHASE 10a — Two-level ask update fully fills BID_26
+  # ask[0]=125/12 → PARTIAL_FILL(12, leaves=8)
+  # ask[1]=127/8  → FILL(8, leaves=0)
+  # ============================================================
+
+  - type: market_update
+    levels:
+      - ask_px: 125
+        ask_sz: 12
+      - ask_px: 127
+        ask_sz: 8
+    expected_reports:
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: BID_26
+        filled_qty: 12
+        leaves_qty: 8
+        cumulative_qty: 12
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_26
+        filled_qty: 8
+        leaves_qty: 0
+        cumulative_qty: 20
+
+  # ============================================================
+  # PHASE 10b — Two-level bid update fully fills ASK_26
+  # Bids iterate descending (best first): bid[105/12] fills first,
+  # then bid[103/8].
+  # bid[0]=105/12 → PARTIAL_FILL(12, leaves=8)
+  # bid[1]=103/8  → FILL(8, leaves=0)
+  # ============================================================
+
+  - type: market_update
+    levels:
+      - bid_px: 103
+        bid_sz: 8
+      - bid_px: 105
+        bid_sz: 12
+    expected_reports:
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: ASK_26
+        filled_qty: 12
+        leaves_qty: 8
+        cumulative_qty: 12
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_26
+        filled_qty: 8
+        leaves_qty: 0
+        cumulative_qty: 20
+
+  # ============================================================
+  # PHASE 11 — Multi-level fill for BID_27 and ASK_27
+  # ============================================================
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 128
+      size: 15
+      client_oid: BID_27
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_27
+        leaves_qty: 15
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 102
+      size: 15
+      client_oid: ASK_27
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_27
+        leaves_qty: 15
+
+  - type: market_update
+    levels:
+      - ask_px: 126
+        ask_sz: 7
+      - ask_px: 128
+        ask_sz: 8
+    expected_reports:
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: BID_27
+        filled_qty: 7
+        leaves_qty: 8
+        cumulative_qty: 7
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_27
+        filled_qty: 8
+        leaves_qty: 0
+        cumulative_qty: 15
+
+  - type: market_update
+    levels:
+      - bid_px: 104
+        bid_sz: 6
+      - bid_px: 106
+        bid_sz: 9
+    expected_reports:
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: ASK_27
+        filled_qty: 9
+        leaves_qty: 6
+        cumulative_qty: 9
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_27
+        filled_qty: 6
+        leaves_qty: 0
+        cumulative_qty: 15
+
+  # ============================================================
+  # PHASE 12 — Third wave of orders (BID_28–37, ASK_28–37)
+  # ============================================================
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 110
+      size: 12
+      client_oid: BID_28
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_28
+        leaves_qty: 12
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 111
+      size: 8
+      client_oid: BID_29
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_29
+        leaves_qty: 8
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 112
+      size: 15
+      client_oid: BID_30
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_30
+        leaves_qty: 15
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 113
+      size: 10
+      client_oid: BID_31
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_31
+        leaves_qty: 10
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 114
+      size: 18
+      client_oid: BID_32
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_32
+        leaves_qty: 18
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 115
+      size: 7
+      client_oid: BID_33
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_33
+        leaves_qty: 7
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 116
+      size: 22
+      client_oid: BID_34
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_34
+        leaves_qty: 22
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 117
+      size: 11
+      client_oid: BID_35
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_35
+        leaves_qty: 11
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 118
+      size: 25
+      client_oid: BID_36
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_36
+        leaves_qty: 25
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 119
+      size: 9
+      client_oid: BID_37
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_37
+        leaves_qty: 9
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 121
+      size: 10
+      client_oid: ASK_28
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_28
+        leaves_qty: 10
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 122
+      size: 8
+      client_oid: ASK_29
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_29
+        leaves_qty: 8
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 123
+      size: 15
+      client_oid: ASK_30
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_30
+        leaves_qty: 15
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 124
+      size: 10
+      client_oid: ASK_31
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_31
+        leaves_qty: 10
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 125
+      size: 18
+      client_oid: ASK_32
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_32
+        leaves_qty: 18
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 126
+      size: 7
+      client_oid: ASK_33
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_33
+        leaves_qty: 7
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 127
+      size: 22
+      client_oid: ASK_34
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_34
+        leaves_qty: 22
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 128
+      size: 11
+      client_oid: ASK_35
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_35
+        leaves_qty: 11
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 129
+      size: 25
+      client_oid: ASK_36
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_36
+        leaves_qty: 25
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 130
+      size: 9
+      client_oid: ASK_37
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_37
+        leaves_qty: 9
+
+  # ============================================================
+  # PHASE 13 — Trades fill the third-wave orders
+  # ============================================================
+
+  - type: trade
+    side: Ask
+    price: 119
+    size: 12
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_37
+        filled_qty: 9
+        leaves_qty: 0
+
+  - type: trade
+    side: Ask
+    price: 118
+    size: 30
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_36
+        filled_qty: 25
+        leaves_qty: 0
+
+  - type: trade
+    side: Ask
+    price: 117
+    size: 15
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_35
+        filled_qty: 11
+        leaves_qty: 0
+
+  - type: trade
+    side: Ask
+    price: 116
+    size: 25
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_34
+        filled_qty: 22
+        leaves_qty: 0
+
+  - type: trade
+    side: Ask
+    price: 115
+    size: 10
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_33
+        filled_qty: 7
+        leaves_qty: 0
+
+  - type: trade
+    side: Ask
+    price: 114
+    size: 20
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_32
+        filled_qty: 18
+        leaves_qty: 0
+
+  - type: trade
+    side: Ask
+    price: 113
+    size: 12
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_31
+        filled_qty: 10
+        leaves_qty: 0
+
+  - type: trade
+    side: Ask
+    price: 112
+    size: 20
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_30
+        filled_qty: 15
+        leaves_qty: 0
+
+  - type: trade
+    side: Ask
+    price: 111
+    size: 10
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_29
+        filled_qty: 8
+        leaves_qty: 0
+
+  - type: trade
+    side: Ask
+    price: 110
+    size: 15
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_28
+        filled_qty: 12
+        leaves_qty: 0
+
+  - type: trade
+    side: Bid
+    price: 121
+    size: 12
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_28
+        filled_qty: 10
+        leaves_qty: 0
+
+  - type: trade
+    side: Bid
+    price: 122
+    size: 10
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_29
+        filled_qty: 8
+        leaves_qty: 0
+
+  - type: trade
+    side: Bid
+    price: 123
+    size: 18
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_30
+        filled_qty: 15
+        leaves_qty: 0
+
+  - type: trade
+    side: Bid
+    price: 124
+    size: 12
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_31
+        filled_qty: 10
+        leaves_qty: 0
+
+  - type: trade
+    side: Bid
+    price: 125
+    size: 20
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_32
+        filled_qty: 18
+        leaves_qty: 0
+
+  - type: trade
+    side: Bid
+    price: 126
+    size: 10
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_33
+        filled_qty: 7
+        leaves_qty: 0
+
+  - type: trade
+    side: Bid
+    price: 127
+    size: 25
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_34
+        filled_qty: 22
+        leaves_qty: 0
+
+  - type: trade
+    side: Bid
+    price: 128
+    size: 15
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_35
+        filled_qty: 11
+        leaves_qty: 0
+
+  - type: trade
+    side: Bid
+    price: 129
+    size: 28
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_36
+        filled_qty: 25
+        leaves_qty: 0
+
+  - type: trade
+    side: Bid
+    price: 130
+    size: 12
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_37
+        filled_qty: 9
+        leaves_qty: 0
+
+  # ============================================================
+  # PHASE 14 — Modify + cancel flow
+  # ============================================================
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 120
+      size: 15
+      client_oid: BID_38
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_38
+        leaves_qty: 15
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 121
+      size: 10
+      client_oid: BID_39
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_39
+        leaves_qty: 10
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 125
+      size: 15
+      client_oid: ASK_38
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_38
+        leaves_qty: 15
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 126
+      size: 10
+      client_oid: ASK_39
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_39
+        leaves_qty: 10
+
+  - type: modify_order
+    client_oid: BID_38
+    new_price: 122
+    new_size: 15
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_38
+        leaves_qty: 15
+
+  - type: modify_order
+    client_oid: ASK_38
+    new_price: 124
+    new_size: 15
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_38
+        leaves_qty: 15
+
+  - type: cancel_order
+    client_oid: BID_39
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: BID_39
+
+  - type: cancel_order
+    client_oid: ASK_39
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: ASK_39
+
+  - type: trade
+    side: Ask
+    price: 122
+    size: 20
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: BID_38
+        filled_qty: 15
+        leaves_qty: 0
+
+  - type: trade
+    side: Bid
+    price: 124
+    size: 20
+    expected_reports:
+      - exec_type: FILL
+        order_status: FILLED
+        client_oid: ASK_38
+        filled_qty: 15
+        leaves_qty: 0
+
+  # ============================================================
+  # PHASE 15 — IOC and FOK rejections
+  # Neutral book: bid=50/1 ask=200/1 — spread of 150 ensures
+  # no IOC/FOK order at reasonable prices can cross.
+  # ============================================================
+
+  - type: market_update
+    levels:
+      - bid_px: 50
+        bid_sz: 1
+        ask_px: 200
+        ask_sz: 1
+    expected_reports: []
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 150
+      size: 10
+      client_oid: IOC_BID_1
+      order_type: LIMIT
+      tif: IOC
+    expected_reports:
+      - exec_type: REJECT
+        order_status: REJECTED
+        client_oid: IOC_BID_1
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 70
+      size: 10
+      client_oid: IOC_ASK_1
+      order_type: LIMIT
+      tif: IOC
+    expected_reports:
+      - exec_type: REJECT
+        order_status: REJECTED
+        client_oid: IOC_ASK_1
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 170
+      size: 5
+      client_oid: FOK_BID_1
+      order_type: LIMIT
+      tif: FOK
+    expected_reports:
+      - exec_type: REJECT
+        order_status: REJECTED
+        client_oid: FOK_BID_1
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 60
+      size: 5
+      client_oid: FOK_ASK_1
+      order_type: LIMIT
+      tif: FOK
+    expected_reports:
+      - exec_type: REJECT
+        order_status: REJECTED
+        client_oid: FOK_ASK_1
+
+  - type: submit_order
+    order:
+      side: Bid
+      price: 140
+      size: 20
+      client_oid: IOC_BID_2
+      order_type: LIMIT
+      tif: IOC
+    expected_reports:
+      - exec_type: REJECT
+        order_status: REJECTED
+        client_oid: IOC_BID_2
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 75
+      size: 20
+      client_oid: IOC_ASK_2
+      order_type: LIMIT
+      tif: IOC
+    expected_reports:
+      - exec_type: REJECT
+        order_status: REJECTED
+        client_oid: IOC_ASK_2
+
+  # ============================================================
+  # PHASE 16 — CANCEL_REJECT for post-fill operations
+  # BID_01 and ASK_01 were fully filled in Phases 3 and 4.
+  # Attempting to modify or cancel them must return CANCEL_REJECT.
+  # ============================================================
+
+  - type: modify_order
+    client_oid: BID_01
+    new_price: 105
+    new_size: 15
+    expected_reports:
+      - exec_type: CANCEL_REJECT
+        order_status: NEW
+        client_oid: BID_01
+
+  - type: cancel_order
+    client_oid: ASK_01
+    expected_reports:
+      - exec_type: CANCEL_REJECT
+        order_status: NEW
+        client_oid: ASK_01
+
+  - type: modify_order
+    client_oid: BID_05
+    new_price: 100
+    new_size: 25
+    expected_reports:
+      - exec_type: CANCEL_REJECT
+        order_status: NEW
+        client_oid: BID_05
+
+  - type: cancel_order
+    client_oid: ASK_05
+    expected_reports:
+      - exec_type: CANCEL_REJECT
+        order_status: NEW
+        client_oid: ASK_05

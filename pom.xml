@@ -9,12 +9,12 @@
     </parent>
 
     <artifactId>gnome-backtest</artifactId>
-    <version>1.0.1-SNAPSHOT</version>
+    <version>1.0.1</version>
 
     <scm>
         <connection>scm:git:git@github.com:gnome-trading-group/gnome-backtest.git</connection>
         <developerConnection>scm:git:git@github.com:gnome-trading-group/gnome-backtest.git</developerConnection>
-        <tag>HEAD</tag>
+        <tag>gnome-backtest-1.0.1</tag>
     </scm>
 
     <distributionManagement>

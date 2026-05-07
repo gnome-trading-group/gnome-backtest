@@ -9,3 +9,14 @@ jobs:
   release:
     uses: gnome-trading-group/gnome-build-tools/.github/workflows/bump-and-deploy.yml@main
     secrets: inherit
+
+  trigger-docker-rebuild:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch to gnomepy
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GH_PAT }}
+          repository: gnome-trading-group/gnomepy
+          event-type: gnome-backtest-updated

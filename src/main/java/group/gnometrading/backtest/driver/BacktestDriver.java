@@ -137,8 +137,9 @@ public final class BacktestDriver {
                 } finally {
                     int done = completed.incrementAndGet();
                     if (done % logInterval == 0 || done == total) {
-                        logger.info(String.format("prepareData: %d/%d (%d%%) loaded, %d missing",
-                            done, total, done * 100 / total, missingCount.get()));
+                        logger.info(String.format(
+                                "prepareData: %d/%d (%d%%) loaded, %d missing",
+                                done, total, done * 100 / total, missingCount.get()));
                     }
                 }
             }));

@@ -26,6 +26,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.agrona.concurrent.UnsafeBuffer;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -207,7 +208,7 @@ public final class BacktestDriver {
             try {
                 processEvent(event);
             } catch (Exception e) {
-                logger.severe("Exception at timestamp " + event.timestamp() + ": " + e.getMessage());
+                logger.log(Level.SEVERE, "Exception at timestamp " + event.timestamp(), e);
                 throw new RuntimeException(e);
             }
         }

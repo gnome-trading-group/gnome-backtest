@@ -4,14 +4,17 @@ on:
     branches:
       - 'master'
       - 'main'
+    tags:
+      - 'v*'
 
 jobs:
   release:
+    if: github.ref_type == 'branch'
     uses: gnome-trading-group/gnome-build-tools/.github/workflows/bump-and-deploy.yml@main
     secrets: inherit
 
   trigger-docker-rebuild:
-    needs: release
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
       - name: Dispatch to gnomepy

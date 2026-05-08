@@ -17,12 +17,19 @@ import group.gnometrading.strategies.StrategyAgent;
 import java.io.IOException;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 import org.agrona.concurrent.UnsafeBuffer;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
 /**
  * Drives a backtest by replaying market data from S3 through the exchange simulation and strategy.
@@ -105,21 +112,56 @@ public final class BacktestDriver {
     }
 
     /**
-     * Loads all market data from S3 into the priority queue.
+     * Loads all market data from S3 into the priority queue in parallel.
      * Each record produces two events: EXCHANGE_MARKET_DATA (at timestampEvent) and
-     * LOCAL_MARKET_DATA (at timestampRecv).
+     * LOCAL_MARKET_DATA (at timestampRecv). Missing keys are skipped and recorded.
      */
     public void prepareData() {
         queue = new PriorityQueue<>();
+        int total = entries.size();
+        int logInterval = Math.max(1, total / 10);
+        AtomicInteger completed = new AtomicInteger(0);
+        AtomicInteger missingCount = new AtomicInteger(0);
+
+        ExecutorService pool = Executors.newFixedThreadPool(16);
+        List<Future<List<Schema>>> futures = new ArrayList<>(total);
+
         for (MarketDataEntry entry : entries) {
-            List<Schema> schemas = entry.loadFromS3(s3Client, bucket);
-            for (Schema schema : schemas) {
-                long exchangeTs = schema.getEventTimestamp();
-                long localTs = schema.getEventTimestamp();
-                queue.add(new BacktestEvent(exchangeTs, EventType.EXCHANGE_MARKET_DATA, schema));
-                queue.add(new BacktestEvent(localTs, EventType.LOCAL_MARKET_DATA, schema));
-            }
+            futures.add(pool.submit(() -> {
+                try {
+                    return entry.loadFromS3(s3Client, bucket);
+                } catch (NoSuchKeyException e) {
+                    logger.warning("Missing S3 key: " + entry.getKey());
+                    missingCount.incrementAndGet();
+                    return Collections.emptyList();
+                } finally {
+                    int done = completed.incrementAndGet();
+                    if (done % logInterval == 0 || done == total) {
+                        logger.info(String.format("prepareData: %d/%d (%d%%) loaded, %d missing",
+                            done, total, done * 100 / total, missingCount.get()));
+                    }
+                }
+            }));
         }
+
+        pool.shutdown();
+        try {
+            for (Future<List<Schema>> future : futures) {
+                for (Schema schema : future.get()) {
+                    long exchangeTs = schema.getEventTimestamp();
+                    long localTs = schema.getEventTimestamp();
+                    queue.add(new BacktestEvent(exchangeTs, EventType.EXCHANGE_MARKET_DATA, schema));
+                    queue.add(new BacktestEvent(localTs, EventType.LOCAL_MARKET_DATA, schema));
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Data loading interrupted", e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException("Data loading failed", e.getCause());
+        }
+
+        logger.info(String.format("prepareData: complete — %d entries, %d missing", total, missingCount.get()));
         ready = true;
     }
 

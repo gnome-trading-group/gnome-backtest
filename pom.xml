@@ -68,13 +68,18 @@
         </dependency>
         <dependency>
             <groupId>group.gnometrading</groupId>
+            <artifactId>gnome-registry</artifactId>
+            <version>1.4.1</version>
+        </dependency>
+        <dependency>
+            <groupId>group.gnometrading</groupId>
             <artifactId>gnome-schemas</artifactId>
             <version>1.4.1</version>
         </dependency>
         <dependency>
             <groupId>group.gnometrading</groupId>
             <artifactId>gnome-sequencer</artifactId>
-            <version>1.2.0</version>
+            <version>1.2.1</version>
         </dependency>
         <dependency>
             <groupId>group.gnometrading</groupId>
@@ -89,7 +94,7 @@
         <dependency>
             <groupId>group.gnometrading</groupId>
             <artifactId>gnome-market-data-core</artifactId>
-            <version>1.0.13</version>
+            <version>1.2.12</version>
         </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>

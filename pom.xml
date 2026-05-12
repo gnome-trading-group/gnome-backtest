@@ -68,8 +68,14 @@
         </dependency>
         <dependency>
             <groupId>group.gnometrading</groupId>
+            <artifactId>gnome-networking</artifactId>
+            <version>1.0.69</version>
+            <classifier>${os.classifier}</classifier>
+        </dependency>
+        <dependency>
+            <groupId>group.gnometrading</groupId>
             <artifactId>gnome-registry</artifactId>
-            <version>1.4.1</version>
+            <version>1.4.2</version>
         </dependency>
         <dependency>
             <groupId>group.gnometrading</groupId>

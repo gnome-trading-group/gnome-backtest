@@ -20,6 +20,7 @@ import group.gnometrading.oms.risk.RiskEngine;
 import group.gnometrading.oms.risk.RiskPolicyType;
 import group.gnometrading.oms.state.RingBufferOrderStateManager;
 import group.gnometrading.sm.Listing;
+import group.gnometrading.sm.ListingSpec;
 import group.gnometrading.strategies.StrategyAgent;
 import group.gnometrading.strings.ViewString;
 import java.time.LocalDateTime;
@@ -119,6 +120,10 @@ public final class BacktestDriverFactory {
             Listing listing = securityMaster.getListing(lsc.listingId);
             if (listing == null) {
                 throw new IllegalArgumentException("Listing not found: " + lsc.listingId);
+            }
+            ListingSpec spec = securityMaster.getListingSpec(lsc.listingId);
+            if (spec == null) {
+                throw new IllegalArgumentException("Listing spec not found for listing: " + lsc.listingId);
             }
             ExchangeProfileConfig profile = config.profiles.get(lsc.profile);
             if (profile == null) {

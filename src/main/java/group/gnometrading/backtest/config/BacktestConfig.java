@@ -19,7 +19,6 @@ public class BacktestConfig {
     public Map<String, ExchangeProfileConfig> profiles;
     public StrategyConfig strategy;
     public RiskConfig risk = new RiskConfig();
-    public S3Config s3 = new S3Config();
     public boolean record = true;
     public int recordDepth = 1;
 

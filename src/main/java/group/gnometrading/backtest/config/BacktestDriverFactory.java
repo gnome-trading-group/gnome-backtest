@@ -63,7 +63,12 @@ public final class BacktestDriverFactory {
         List<MarketDataEntry> entries = buildEntries(config, resolved);
         OmsBacktestAdapter adapter = new OmsBacktestAdapter(oms, recorder);
 
-        return new BacktestDriver(entries, strategy, exchangeMap, adapter, s3Client, config.s3.bucket, recorder);
+        String stage = System.getenv("STAGE");
+        if (stage == null || stage.isEmpty()) {
+            stage = "prod";
+        }
+        String bucket = "gnome-market-data-" + stage.toLowerCase();
+        return new BacktestDriver(entries, strategy, exchangeMap, adapter, s3Client, bucket, recorder);
     }
 
     /**

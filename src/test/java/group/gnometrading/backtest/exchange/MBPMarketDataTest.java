@@ -27,6 +27,8 @@ class MBPMarketDataTest {
 
     static final long PRICE_NULL = Mbp10Decoder.priceNullValue();
     static final long SIZE_NULL = Mbp10Decoder.sizeNullValue();
+    static final long P = Statics.PRICE_SCALING_FACTOR;
+    static final long S = Statics.SIZE_SCALING_FACTOR;
 
     static class DummyQueueModel implements QueueModel {
         @Override
@@ -289,15 +291,15 @@ class MBPMarketDataTest {
 
     @Test
     void testFeeCalculationOnFill() {
-        // phantom=5 at ask=102, so trade=15 → remainingVolume=15-5=10 → fills all 10 of ASK_1
-        Mbp10Schema update = makeSingleLevelUpdate(100, 0, 102, 5);
+        // phantom=5*S at ask=102*P, so trade=15*S → remainingVolume=10*S → fills all 10 of ASK_1 (scaled)
+        Mbp10Schema update = makeSingleLevelUpdate(100 * P, 0, 102 * P, 5 * S);
         exchange.onMarketData(update);
 
-        Order askOrder = makeOrder(102, 10, Side.Ask, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
+        Order askOrder = makeOrder(102 * P, 10 * S, Side.Ask, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
         exchange.submitOrder(askOrder);
 
-        // Trade fills ASK_1: price=102, size=10, total=1020. Maker fee = 3% = 30.6
-        Mbp10Schema trade = makeTrade(Side.Bid, 102, 15);
+        // Trade fills ASK_1: price=102, qty=10. Maker fee = 3% = $30.6
+        Mbp10Schema trade = makeTrade(Side.Bid, 102 * P, 15 * S);
         List<OrderExecutionReport> reports = exchange.onMarketData(trade);
 
         assertFalse(reports.isEmpty());

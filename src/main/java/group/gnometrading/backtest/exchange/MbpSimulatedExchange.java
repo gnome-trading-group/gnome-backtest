@@ -326,7 +326,9 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
     // --- Factory helpers ---
 
     private static long toScaledFee(double fee) {
-        return (long) (fee * Statics.PRICE_SCALING_FACTOR);
+        // fee = notional_scaled * rate = (qty * SIZE_SCALE) * (price * PRICE_SCALE) * rate
+        // Dividing by SIZE_SCALE yields actual_fee * PRICE_SCALE, matching the SBE price unit.
+        return (long) (fee / Statics.SIZE_SCALING_FACTOR);
     }
 
     private OrderExecutionReport makeReport(

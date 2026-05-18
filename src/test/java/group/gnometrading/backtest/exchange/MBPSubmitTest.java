@@ -53,6 +53,8 @@ class MBPSubmitTest {
 
     static final long PRICE_NULL = Long.MIN_VALUE;
     static final long SIZE_NULL = 4294967295L;
+    static final long P = Statics.PRICE_SCALING_FACTOR;
+    static final long S = Statics.SIZE_SCALING_FACTOR;
 
     static Mbp10Schema makeSingleLevelUpdate(long bidPx, long bidSz, long askPx, long askSz) {
         Mbp10Schema schema = new Mbp10Schema();
@@ -350,30 +352,30 @@ class MBPSubmitTest {
 
     @Test
     void testLimitOrderImmediateFullCross() {
-        // Seed: bid 100/50, ask 101/20
-        exchange.onMarketData(makeSingleLevelUpdate(100, 50, 101, 20));
+        // Seed: bid 100/50, ask 101/20 (scaled)
+        exchange.onMarketData(makeSingleLevelUpdate(100 * P, 50 * S, 101 * P, 20 * S));
 
         // Limit buy at 101, size 20 — fully crosses the resting ask
-        List<OrderExecutionReport> reports = exchange.submitOrder(makeLimitOrder(101, 20, Side.Bid, 1L));
+        List<OrderExecutionReport> reports = exchange.submitOrder(makeLimitOrder(101 * P, 20 * S, Side.Bid, 1L));
 
         assertEquals(1, reports.size());
         OrderExecutionReport r = reports.get(0);
         assertEquals(ExecType.FILL, r.decoder.execType());
         assertEquals(OrderStatus.FILLED, r.decoder.orderStatus());
-        assertEquals(20, r.decoder.filledQty());
+        assertEquals(20 * S, r.decoder.filledQty());
         assertEquals(0, r.decoder.leavesQty());
-        assertEquals(20, r.decoder.cumulativeQty());
-        assertEquals(101, r.decoder.fillPrice());
+        assertEquals(20 * S, r.decoder.cumulativeQty());
+        assertEquals(101 * P, r.decoder.fillPrice());
         assertEquals(101 * 20 * 0.05, decodeFee(r), 0.01); // taker fee — aggressive limit crosses the spread
     }
 
     @Test
     void testLimitOrderPartialCrossGtcRemainder() {
-        // Seed: ask 101/10 — only 10 available
-        exchange.onMarketData(makeSingleLevelUpdate(100, 50, 101, 10));
+        // Seed: ask 101/10 — only 10 available (scaled)
+        exchange.onMarketData(makeSingleLevelUpdate(100 * P, 50 * S, 101 * P, 10 * S));
 
         // Limit buy at 101, size 25, GTC — partial fill, remainder goes on book
-        List<OrderExecutionReport> reports = exchange.submitOrder(makeLimitOrder(101, 25, Side.Bid, 1L));
+        List<OrderExecutionReport> reports = exchange.submitOrder(makeLimitOrder(101 * P, 25 * S, Side.Bid, 1L));
 
         assertEquals(2, reports.size());
         OrderExecutionReport newReport = reports.get(0);
@@ -381,13 +383,13 @@ class MBPSubmitTest {
 
         assertEquals(ExecType.NEW, newReport.decoder.execType());
         assertEquals(OrderStatus.NEW, newReport.decoder.orderStatus());
-        assertEquals(25, newReport.decoder.leavesQty());
+        assertEquals(25 * S, newReport.decoder.leavesQty());
 
         assertEquals(ExecType.PARTIAL_FILL, partialFill.decoder.execType());
         assertEquals(OrderStatus.PARTIALLY_FILLED, partialFill.decoder.orderStatus());
-        assertEquals(10, partialFill.decoder.filledQty());
-        assertEquals(15, partialFill.decoder.leavesQty());
-        assertEquals(101, partialFill.decoder.fillPrice());
+        assertEquals(10 * S, partialFill.decoder.filledQty());
+        assertEquals(15 * S, partialFill.decoder.leavesQty());
+        assertEquals(101 * P, partialFill.decoder.fillPrice());
         assertEquals(101 * 10 * 0.05, decodeFee(partialFill), 0.01); // taker fee
     }
 
@@ -425,20 +427,21 @@ class MBPSubmitTest {
 
     @Test
     void testMarketOrderMultipleLevelsVwap() {
-        // ask 101/20, ask 102/15
-        exchange.onMarketData(makeTwoLevelUpdate(100, 50, 101, 20, 99, 30, 102, 15));
+        // ask 101/20, ask 102/15 (scaled)
+        exchange.onMarketData(makeTwoLevelUpdate(100 * P, 50 * S, 101 * P, 20 * S, 99 * P, 30 * S, 102 * P, 15 * S));
 
         // Market buy 30: fills 20 at 101 and 10 at 102
-        // VWAP = (101*20 + 102*10) / 30 = (2020 + 1020) / 30 = 101.33 → 101 (long truncation)
-        Order order = makeOrder(0, 30, Side.Bid, 1L, OrderType.MARKET, TimeInForce.GOOD_TILL_CANCELED);
+        // VWAP = (101*P*20*S + 102*P*10*S) / (30*S) = P*(101*20+102*10)/30 = P*101.333... → truncated
+        long expectedVwap = (101L * P * 20 * S + 102L * P * 10 * S) / (30 * S);
+        Order order = makeOrder(0, 30 * S, Side.Bid, 1L, OrderType.MARKET, TimeInForce.GOOD_TILL_CANCELED);
         List<OrderExecutionReport> reports = exchange.submitOrder(order);
 
         assertEquals(1, reports.size());
         OrderExecutionReport r = reports.get(0);
         assertEquals(ExecType.FILL, r.decoder.execType());
-        assertEquals(30, r.decoder.filledQty());
+        assertEquals(30 * S, r.decoder.filledQty());
         assertEquals(0, r.decoder.leavesQty());
-        assertEquals(101, r.decoder.fillPrice());
+        assertEquals(expectedVwap, r.decoder.fillPrice());
         assertEquals((101 * 20 + 102 * 10) * 0.05, decodeFee(r), 0.01);
     }
 
@@ -460,16 +463,16 @@ class MBPSubmitTest {
 
     @Test
     void testMarketSellOrder() {
-        exchange.onMarketData(makeSingleLevelUpdate(100, 30, 101, 40));
+        exchange.onMarketData(makeSingleLevelUpdate(100 * P, 30 * S, 101 * P, 40 * S));
 
-        Order order = makeOrder(0, 20, Side.Ask, 1L, OrderType.MARKET, TimeInForce.GOOD_TILL_CANCELED);
+        Order order = makeOrder(0, 20 * S, Side.Ask, 1L, OrderType.MARKET, TimeInForce.GOOD_TILL_CANCELED);
         List<OrderExecutionReport> reports = exchange.submitOrder(order);
 
         assertEquals(1, reports.size());
         OrderExecutionReport r = reports.get(0);
         assertEquals(ExecType.FILL, r.decoder.execType());
-        assertEquals(20, r.decoder.filledQty());
-        assertEquals(100, r.decoder.fillPrice());
+        assertEquals(20 * S, r.decoder.filledQty());
+        assertEquals(100 * P, r.decoder.fillPrice());
         assertEquals(100 * 20 * 0.05, decodeFee(r), 0.01);
     }
 
@@ -573,10 +576,10 @@ class MBPSubmitTest {
 
     @Test
     void testAggressiveLimitOrderChargesTakerFee() {
-        exchange.onMarketData(makeSingleLevelUpdate(100, 50, 101, 20));
+        exchange.onMarketData(makeSingleLevelUpdate(100 * P, 50 * S, 101 * P, 20 * S));
 
         // Limit buy at 101 crosses the resting ask — should charge taker fee (5%), not maker (3%)
-        List<OrderExecutionReport> reports = exchange.submitOrder(makeLimitOrder(101, 20, Side.Bid, 1L));
+        List<OrderExecutionReport> reports = exchange.submitOrder(makeLimitOrder(101 * P, 20 * S, Side.Bid, 1L));
 
         assertEquals(1, reports.size());
         assertEquals(ExecType.FILL, reports.get(0).decoder.execType());
@@ -585,24 +588,24 @@ class MBPSubmitTest {
 
     @Test
     void testExecutionReportFieldsOnMakerFill() {
-        // Seed ask at 102 with depth 5
-        exchange.onMarketData(makeSingleLevelUpdate(100, 50, 102, 5));
+        // Seed ask at 102 with depth 5 (scaled)
+        exchange.onMarketData(makeSingleLevelUpdate(100 * P, 50 * S, 102 * P, 5 * S));
 
         // Place local ask at 102, size 10 (phantom=5)
-        Order askOrder = makeOrder(102, 10, Side.Ask, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
+        Order askOrder = makeOrder(102 * P, 10 * S, Side.Ask, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
         exchange.submitOrder(askOrder);
 
         // Trade 15 at 102: phantom=5, remainingVol=10, fills all 10
-        List<OrderExecutionReport> reports = exchange.onMarketData(makeTrade(Side.Bid, 102, 15));
+        List<OrderExecutionReport> reports = exchange.onMarketData(makeTrade(Side.Bid, 102 * P, 15 * S));
 
         assertEquals(1, reports.size());
         OrderExecutionReport r = reports.get(0);
         assertEquals(1L, r.getClientOidCounter());
         assertEquals(ExecType.FILL, r.decoder.execType());
         assertEquals(OrderStatus.FILLED, r.decoder.orderStatus());
-        assertEquals(10, r.decoder.filledQty());
-        assertEquals(102, r.decoder.fillPrice());
-        assertEquals(10, r.decoder.cumulativeQty());
+        assertEquals(10 * S, r.decoder.filledQty());
+        assertEquals(102 * P, r.decoder.fillPrice());
+        assertEquals(10 * S, r.decoder.cumulativeQty());
         assertEquals(0, r.decoder.leavesQty());
         assertEquals(102 * 10 * 0.03, decodeFee(r), 0.01);
         assertEquals(1, r.decoder.exchangeId());

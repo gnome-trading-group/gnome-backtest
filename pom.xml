@@ -84,6 +84,11 @@
         </dependency>
         <dependency>
             <groupId>group.gnometrading</groupId>
+            <artifactId>gnome-simulation</artifactId>
+            <version>1.1.0</version>
+        </dependency>
+        <dependency>
+            <groupId>group.gnometrading</groupId>
             <artifactId>gnome-sequencer</artifactId>
             <version>1.2.1</version>
         </dependency>

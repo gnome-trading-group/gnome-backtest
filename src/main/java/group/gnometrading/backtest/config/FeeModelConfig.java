@@ -2,8 +2,8 @@ package group.gnometrading.backtest.config;
 
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
-import group.gnometrading.backtest.fee.FeeModel;
-import group.gnometrading.backtest.fee.StaticFeeModel;
+import group.gnometrading.simulation.fee.FeeModel;
+import group.gnometrading.simulation.fee.StaticFeeModel;
 
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type", defaultImpl = FeeModelConfig.Static.class)
 @JsonSubTypes({@JsonSubTypes.Type(value = FeeModelConfig.Static.class, name = "static")})

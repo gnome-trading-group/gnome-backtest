@@ -2,9 +2,9 @@ package group.gnometrading.backtest.config;
 
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
-import group.gnometrading.backtest.latency.GaussianLatency;
-import group.gnometrading.backtest.latency.LatencyModel;
-import group.gnometrading.backtest.latency.StaticLatency;
+import group.gnometrading.simulation.latency.GaussianLatency;
+import group.gnometrading.simulation.latency.LatencyModel;
+import group.gnometrading.simulation.latency.StaticLatency;
 
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type", defaultImpl = LatencyConfig.Static.class)
 @JsonSubTypes({

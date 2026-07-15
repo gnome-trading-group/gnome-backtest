@@ -1,7 +1,7 @@
 package group.gnometrading.backtest.config;
 
-import group.gnometrading.backtest.exchange.MbpSimulatedExchange;
-import group.gnometrading.backtest.exchange.SimulatedExchange;
+import group.gnometrading.simulation.exchange.MbpSimulatedExchange;
+import group.gnometrading.simulation.exchange.SimulatedExchange;
 
 public final class ExchangeProfileConfig {
 

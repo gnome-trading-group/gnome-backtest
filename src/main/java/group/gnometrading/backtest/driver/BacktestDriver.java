@@ -1,7 +1,6 @@
 package group.gnometrading.backtest.driver;
 
 import group.gnometrading.backtest.bridge.BytesSchemaFactory;
-import group.gnometrading.backtest.exchange.SimulatedExchange;
 import group.gnometrading.backtest.oms.OmsBacktestAdapter;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
 import group.gnometrading.backtest.recorder.MetricAware;
@@ -13,6 +12,7 @@ import group.gnometrading.schemas.OrderExecutionReport;
 import group.gnometrading.schemas.Schema;
 import group.gnometrading.sequencer.JournalReader;
 import group.gnometrading.sequencer.SequencedPoller;
+import group.gnometrading.simulation.exchange.SimulatedExchange;
 import group.gnometrading.strategies.StrategyAgent;
 import java.io.IOException;
 import java.nio.ByteOrder;

@@ -2,10 +2,10 @@ package group.gnometrading.backtest.config;
 
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
-import group.gnometrading.backtest.queues.OptimisticQueueModel;
-import group.gnometrading.backtest.queues.ProbabilisticQueueModel;
-import group.gnometrading.backtest.queues.QueueModel;
-import group.gnometrading.backtest.queues.RiskAverseQueueModel;
+import group.gnometrading.simulation.queues.OptimisticQueueModel;
+import group.gnometrading.simulation.queues.ProbabilisticQueueModel;
+import group.gnometrading.simulation.queues.QueueModel;
+import group.gnometrading.simulation.queues.RiskAverseQueueModel;
 
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type", defaultImpl = QueueModelConfig.RiskAverse.class)
 @JsonSubTypes({

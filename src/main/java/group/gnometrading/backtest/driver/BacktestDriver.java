@@ -5,6 +5,7 @@ import group.gnometrading.backtest.oms.OmsBacktestAdapter;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
 import group.gnometrading.backtest.recorder.MetricAware;
 import group.gnometrading.data.MarketDataEntry;
+import group.gnometrading.schemas.ExecType;
 import group.gnometrading.schemas.Intent;
 import group.gnometrading.schemas.IntentDecoder;
 import group.gnometrading.schemas.MessageHeaderDecoder;
@@ -265,8 +266,12 @@ public final class BacktestDriver {
                 SimulatedExchange exchange = getExchangeForMessage(message);
 
                 List<OrderExecutionReport> reports;
+                boolean isMaker = true;
                 if (message instanceof LocalMessage.OrderMessage om) {
                     reports = exchange.submitOrder(om.order());
+                    isMaker = reports.stream()
+                            .noneMatch(r -> r.decoder.execType() == ExecType.FILL
+                                    || r.decoder.execType() == ExecType.PARTIAL_FILL);
                 } else if (message instanceof LocalMessage.CancelOrderMessage cm) {
                     reports = exchange.cancelOrder(cm.cancelOrder());
                 } else if (message instanceof LocalMessage.ModifyOrderMessage am) {
@@ -275,10 +280,9 @@ public final class BacktestDriver {
                     throw new IllegalStateException("Unknown local message type: " + message.getClass());
                 }
 
+                long processingTime = exchange.simulateOrderProcessingTime(isMaker);
                 for (OrderExecutionReport report : reports) {
-                    long deliveryTs = event.timestamp()
-                            + exchange.simulateOrderProcessingTime()
-                            + exchange.simulateNetworkLatency();
+                    long deliveryTs = event.timestamp() + processingTime + exchange.simulateNetworkLatency();
                     report.encoder.timestampEvent(event.timestamp()).timestampRecv(deliveryTs);
                     setExchangeIds(report, message);
                     queue.add(new BacktestEvent(deliveryTs, EventType.EXCHANGE_MESSAGE, report));

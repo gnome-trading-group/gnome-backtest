@@ -21,6 +21,7 @@ import group.gnometrading.schemas.OrderExecutionReport;
 import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Schema;
 import group.gnometrading.schemas.Side;
+import group.gnometrading.strategies.PythonStrategyAgent;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -56,7 +57,7 @@ class BacktestDriverIntegrationTest {
         PositionView positionView = oms.getPositionTracker().createPositionView(0);
 
         MomentumCallback callback = new MomentumCallback();
-        PythonStrategyAgent strategy = PythonStrategyAgent.create(positionView, callback);
+        PythonStrategyAgent strategy = PythonStrategyAgent.create(positionView, securityMaster, callback);
 
         BacktestRecorder recorder = new BacktestRecorder(config.recordDepth);
         S3Client s3Client = S3Client.create();
@@ -95,7 +96,7 @@ class BacktestDriverIntegrationTest {
         PositionView positionView = oms.getPositionTracker().createPositionView(0);
 
         SpammingMarketMakerCallback callback = new SpammingMarketMakerCallback();
-        PythonStrategyAgent strategy = PythonStrategyAgent.create(positionView, callback);
+        PythonStrategyAgent strategy = PythonStrategyAgent.create(positionView, securityMaster, callback);
 
         BacktestRecorder recorder = new BacktestRecorder(config.recordDepth);
         S3Client s3Client = S3Client.create();
@@ -163,6 +164,11 @@ class BacktestDriverIntegrationTest {
             return 500_000L;
         }
 
+        @Override
+        public void onInit(
+                group.gnometrading.oms.position.PositionView positionView,
+                group.gnometrading.SecurityMaster securityMaster) {}
+
         private static Intent buildTakeIntent(Mbp10Schema schema, Side takeSide) {
             Intent intent = new Intent();
             intent.encoder
@@ -222,6 +228,11 @@ class BacktestDriverIntegrationTest {
         public long simulateProcessingTime() {
             return 500_000L;
         }
+
+        @Override
+        public void onInit(
+                group.gnometrading.oms.position.PositionView positionView,
+                group.gnometrading.SecurityMaster securityMaster) {}
 
         private static Intent buildQuoteIntent(Mbp10Schema schema, long bidPx, long askPx) {
             Intent intent = new Intent();

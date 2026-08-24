@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import group.gnometrading.simulation.config.ExchangeProfileConfig;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.LocalDateTime;

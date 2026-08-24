@@ -18,6 +18,7 @@ import group.gnometrading.oms.risk.PolicyFactory;
 import group.gnometrading.oms.risk.RiskEngine;
 import group.gnometrading.oms.risk.RiskPolicyType;
 import group.gnometrading.oms.state.RingBufferOrderStateManager;
+import group.gnometrading.simulation.config.ExchangeProfileConfig;
 import group.gnometrading.simulation.exchange.SimulatedExchange;
 import group.gnometrading.sm.Listing;
 import group.gnometrading.sm.ListingSpec;

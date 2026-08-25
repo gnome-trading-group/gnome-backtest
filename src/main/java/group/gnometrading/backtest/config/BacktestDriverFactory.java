@@ -88,7 +88,9 @@ public final class BacktestDriverFactory {
                 new RingBufferOrderStateManager(),
                 new DefaultPositionTracker(sharedBuffer),
                 engine,
-                securityMaster);
+                securityMaster,
+                null,
+                null);
     }
 
     private static RiskEngine buildRiskEngine(RiskConfig risk) {

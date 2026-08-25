@@ -231,6 +231,9 @@ public final class BacktestDriver {
                 OrderExecutionReport report = (OrderExecutionReport) event.data();
                 // OMS processes exec report first (position tracking, state updates, may emit orders)
                 List<LocalMessage> omsMessages = adapter.processExecutionReport(report);
+                // Schedule OMS messages before calling processIntents — both share the same internal
+                // messageBuffer, so processIntents.clear() would destroy omsMessages if we waited.
+                scheduleLocalMessages(event.timestamp(), omsMessages);
                 // OMS forwards exec report to strategy (after position state is updated)
                 for (OrderExecutionReport forwarded : adapter.getStrategyExecReports()) {
                     strategy.submitExecReport(forwarded);
@@ -242,8 +245,7 @@ public final class BacktestDriver {
                 for (OrderExecutionReport reject : adapter.getStrategyExecReports()) {
                     strategy.submitExecReport(reject);
                 }
-                // OMS messages have no strategy processing delay; strategy messages do
-                scheduleLocalMessages(event.timestamp(), omsMessages);
+                // Strategy messages have an additional processing delay
                 scheduleLocalMessages(event.timestamp(), strategyMessages, getProcessingTime());
             }
             case LOCAL_MARKET_DATA -> {

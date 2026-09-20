@@ -57,7 +57,7 @@ class BacktestDriverIntegrationTest {
         PositionView positionView = oms.getPositionTracker().createPositionView(0);
 
         MomentumCallback callback = new MomentumCallback();
-        PythonStrategyAgent strategy = PythonStrategyAgent.create(positionView, securityMaster, callback);
+        PythonStrategyAgent strategy = PythonStrategyAgent.create(0, positionView, securityMaster, callback);
 
         BacktestRecorder recorder = new BacktestRecorder(config.recordDepth);
         S3Client s3Client = S3Client.create();
@@ -96,7 +96,7 @@ class BacktestDriverIntegrationTest {
         PositionView positionView = oms.getPositionTracker().createPositionView(0);
 
         SpammingMarketMakerCallback callback = new SpammingMarketMakerCallback();
-        PythonStrategyAgent strategy = PythonStrategyAgent.create(positionView, securityMaster, callback);
+        PythonStrategyAgent strategy = PythonStrategyAgent.create(0, positionView, securityMaster, callback);
 
         BacktestRecorder recorder = new BacktestRecorder(config.recordDepth);
         S3Client s3Client = S3Client.create();

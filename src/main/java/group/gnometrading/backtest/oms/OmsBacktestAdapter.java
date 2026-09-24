@@ -20,6 +20,7 @@ import group.gnometrading.sequencer.SequencedPoller;
 import group.gnometrading.sequencer.SequencedRingBuffer;
 import java.util.ArrayList;
 import java.util.List;
+import org.agrona.concurrent.SystemEpochNanoClock;
 import org.agrona.concurrent.UnsafeBuffer;
 
 /**
@@ -68,8 +69,13 @@ public final class OmsBacktestAdapter {
         this.strategyExecReportBuffer =
                 new SequencedRingBuffer<>(OrderExecutionReport::new, globalSequence, OUTBOUND_BUFFER_SIZE);
 
-        this.omsAgent =
-                new OmsAgent(oms, intentBuffer, execReportBuffer, orderOutboundBuffer, strategyExecReportBuffer);
+        this.omsAgent = new OmsAgent(
+                oms,
+                intentBuffer,
+                execReportBuffer,
+                orderOutboundBuffer,
+                strategyExecReportBuffer,
+                new SystemEpochNanoClock());
         this.orderOutboundPoller = orderOutboundBuffer.createPoller(this::onOrderOutboundEvent);
         this.strategyExecReportPoller = strategyExecReportBuffer.createPoller(this::onStrategyExecReportEvent);
 

@@ -115,8 +115,9 @@ public final class BacktestDriver {
 
     /**
      * Loads all market data from S3 into the priority queue in parallel.
-     * Each record produces two events: EXCHANGE_MARKET_DATA (at timestampEvent) and
-     * LOCAL_MARKET_DATA (at timestampRecv). Missing keys are skipped and recorded.
+     * Each record produces two events: EXCHANGE_MARKET_DATA at the event timestamp and
+     * LOCAL_MARKET_DATA one simulated network hop later. Missing keys are skipped and recorded,
+     * as are records carrying a null event timestamp.
      */
     public void prepareData() {
         queue = new PriorityQueue<>();
@@ -124,6 +125,8 @@ public final class BacktestDriver {
         int logInterval = Math.max(1, total / 10);
         AtomicInteger completed = new AtomicInteger(0);
         AtomicInteger missingCount = new AtomicInteger(0);
+
+        int droppedCount = 0;
 
         ExecutorService pool = Executors.newFixedThreadPool(16);
         List<Future<List<Schema>>> futures = new ArrayList<>(total);
@@ -152,7 +155,12 @@ public final class BacktestDriver {
             for (Future<List<Schema>> future : futures) {
                 for (Schema schema : future.get()) {
                     long exchangeTs = schema.getEventTimestamp();
-                    long localTs = schema.getEventTimestamp();
+                    if (exchangeTs <= 0) {
+                        logger.warning("Dropping " + schema.schemaType + " record with null event timestamp");
+                        droppedCount++;
+                        continue;
+                    }
+                    long localTs = exchangeTs + getExchange(schema).simulateNetworkLatency();
                     queue.add(new BacktestEvent(exchangeTs, EventType.EXCHANGE_MARKET_DATA, schema));
                     queue.add(new BacktestEvent(localTs, EventType.LOCAL_MARKET_DATA, schema));
                 }
@@ -164,7 +172,9 @@ public final class BacktestDriver {
             throw new RuntimeException("Data loading failed", e.getCause());
         }
 
-        logger.info(String.format("prepareData: complete — %d entries, %d missing", total, missingCount.get()));
+        logger.info(String.format(
+                "prepareData: complete — %d entries, %d missing, %d dropped (null event timestamp)",
+                total, missingCount.get(), droppedCount));
         ready = true;
     }
 
@@ -174,14 +184,26 @@ public final class BacktestDriver {
      */
     public void prepareDataFromJournal(JournalReader reader) throws IOException {
         queue = new PriorityQueue<>();
+        int[] dropped = new int[1];
         reader.readAll((globalSequence, templateId, buffer, length) -> {
             byte[] bytes = new byte[length];
             buffer.getBytes(0, bytes);
             Schema schema = BytesSchemaFactory.fromBytes(bytes);
-            long ts = schema.getEventTimestamp();
-            queue.add(new BacktestEvent(ts, EventType.EXCHANGE_MARKET_DATA, schema));
-            queue.add(new BacktestEvent(ts, EventType.LOCAL_MARKET_DATA, schema));
+            long exchangeTs = schema.getEventTimestamp();
+            if (exchangeTs <= 0) {
+                logger.warning("Dropping " + schema.schemaType + " record with null event timestamp at global sequence "
+                        + globalSequence);
+                dropped[0]++;
+                return;
+            }
+            queue.add(new BacktestEvent(exchangeTs, EventType.EXCHANGE_MARKET_DATA, schema));
+            long localTs = exchangeTs + getExchange(schema).simulateNetworkLatency();
+            queue.add(new BacktestEvent(localTs, EventType.LOCAL_MARKET_DATA, schema));
         });
+        if (dropped[0] > 0) {
+            logger.warning(String.format(
+                    "prepareDataFromJournal: dropped %d record(s) with null event timestamp", dropped[0]));
+        }
         ready = true;
     }
 

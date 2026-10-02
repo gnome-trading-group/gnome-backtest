@@ -9,9 +9,11 @@ import group.gnometrading.schemas.Mbp10Decoder;
 import group.gnometrading.schemas.Mbp10Schema;
 import group.gnometrading.schemas.Order;
 import group.gnometrading.schemas.OrderExecutionReport;
+import group.gnometrading.schemas.OrderExecutionReportDecoder;
 import group.gnometrading.schemas.OrderStatus;
 import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Side;
+import group.gnometrading.schemas.Statics;
 import group.gnometrading.schemas.TimeInForce;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -546,7 +548,45 @@ class BacktestRecorderTest {
                 filledQty = orders.getLongColumn(col.columnIndex())[0];
             }
         }
-        assertEquals(price * size, totalCost);
+        assertEquals(price * size / Statics.SIZE_SCALING_FACTOR, totalCost, "notional in price units");
         assertEquals(size, filledQty);
+    }
+
+    @Test
+    void testFillWithoutAFeeRecordsZeroFee() {
+        long clientOid = 31L;
+        long size = 100L;
+        long price = 10_000_000L;
+
+        recorder.onOrderSubmitted(1000L, makeLimitOrder(1, 100, price, size, Side.Bid, clientOid));
+        recorder.onExecution(
+                1001L, makeExecReport(1, 100, ExecType.NEW, OrderStatus.NEW, 0, 0, 0, size, 0, clientOid), 0, Side.Bid);
+        recorder.onExecution(
+                1002L,
+                makeExecReport(
+                        1,
+                        100,
+                        ExecType.FILL,
+                        OrderStatus.FILLED,
+                        price,
+                        size,
+                        size,
+                        0,
+                        OrderExecutionReportDecoder.feeNullValue(),
+                        clientOid),
+                0,
+                Side.Bid);
+
+        assertEquals(0.0, doubleColumn(recorder.getFillRecords(), "fee")[0]);
+        assertEquals(0.0, doubleColumn(recorder.getOrderRecords(), "total_fee")[0]);
+    }
+
+    private static double[] doubleColumn(RecordBuffer buffer, String name) {
+        for (ColumnDef col : buffer.getColumns()) {
+            if (col.name().equals(name)) {
+                return buffer.getDoubleColumn(col.columnIndex());
+            }
+        }
+        throw new IllegalArgumentException("No column " + name);
     }
 }

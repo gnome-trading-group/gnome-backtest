@@ -1,5 +1,6 @@
 package group.gnometrading.backtest.recorder;
 
+import group.gnometrading.oms.position.Position;
 import group.gnometrading.schemas.Bbo1mSchema;
 import group.gnometrading.schemas.Bbo1sSchema;
 import group.gnometrading.schemas.ExecType;
@@ -13,6 +14,7 @@ import group.gnometrading.schemas.Ohlcv1mSchema;
 import group.gnometrading.schemas.Ohlcv1sSchema;
 import group.gnometrading.schemas.Order;
 import group.gnometrading.schemas.OrderExecutionReport;
+import group.gnometrading.schemas.OrderExecutionReportDecoder;
 import group.gnometrading.schemas.Schema;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.Statics;
@@ -475,7 +477,7 @@ public final class BacktestRecorder {
         fillRecords.setLong(idx, filPrice, report.decoder.fillPrice());
         fillRecords.setLong(idx, filQty, report.decoder.filledQty());
         fillRecords.setLong(idx, filLeavesQty, report.decoder.leavesQty());
-        fillRecords.setDouble(idx, filFee, report.decoder.fee() / (double) Statics.PRICE_SCALING_FACTOR);
+        fillRecords.setDouble(idx, filFee, feeDollars(report));
 
         long bboKey = bboKey(exchangeId, securityId);
         long[] bbo = bboCache.get(bboKey);
@@ -493,8 +495,14 @@ public final class BacktestRecorder {
         long qty = report.decoder.filledQty();
         long price = report.decoder.fillPrice();
         ifo.filledQty += qty;
-        ifo.totalCost += price * qty;
-        ifo.totalFee += report.decoder.fee() / (double) Statics.PRICE_SCALING_FACTOR;
+        ifo.totalCost += Position.notional(price, qty);
+        ifo.totalFee += feeDollars(report);
+    }
+
+    // The fee is optional on a report; its null sentinel would otherwise read as about -$9.2 billion.
+    private static double feeDollars(OrderExecutionReport report) {
+        long fee = report.decoder.fee();
+        return fee == OrderExecutionReportDecoder.feeNullValue() ? 0.0 : fee / (double) Statics.PRICE_SCALING_FACTOR;
     }
 
     private void finalizeOrder(long timestamp, long clientOid, long leavesQty, byte status) {

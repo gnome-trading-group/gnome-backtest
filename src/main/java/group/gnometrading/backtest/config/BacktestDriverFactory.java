@@ -9,6 +9,9 @@ import group.gnometrading.backtest.recorder.BacktestRecorder;
 import group.gnometrading.data.MarketDataEntry;
 import group.gnometrading.logging.ConsoleLogger;
 import group.gnometrading.oms.OrderManagementSystem;
+import group.gnometrading.oms.pnl.PriceSlotRegistry;
+import group.gnometrading.oms.pnl.PriceWriterAgent;
+import group.gnometrading.oms.pnl.SharedPriceBuffer;
 import group.gnometrading.oms.position.DefaultPositionTracker;
 import group.gnometrading.oms.position.SharedPositionBuffer;
 import group.gnometrading.oms.risk.Configurable;
@@ -49,6 +52,7 @@ public final class BacktestDriverFactory {
      * @param strategy        pre-built strategy agent
      * @param recorder        optional recorder; null disables recording
      * @param s3Client        S3 client for market data loading
+     * @param prices          the price buffer the OMS was built with ({@link #buildPrices})
      */
     public static BacktestDriver create(
             BacktestConfig config,
@@ -56,20 +60,37 @@ public final class BacktestDriverFactory {
             OrderManagementSystem oms,
             StrategyAgent strategy,
             BacktestRecorder recorder,
-            S3Client s3Client) {
+            S3Client s3Client,
+            BacktestPrices prices) {
 
         List<ResolvedListing> resolved = resolveListings(config, securityMaster);
 
         Map<Integer, Map<Integer, SimulatedExchange>> exchangeMap = buildExchangeMap(config, resolved);
         List<MarketDataEntry> entries = buildEntries(config, resolved);
         OmsBacktestAdapter adapter = new OmsBacktestAdapter(oms, recorder);
+        PriceWriterAgent priceWriter = new PriceWriterAgent(
+                prices.buffer(), prices.registry(), securityMaster, strategy.getMarketDataBuffer());
 
         String stage = System.getenv("STAGE");
         if (stage == null || stage.isEmpty()) {
             stage = "prod";
         }
         String bucket = "gnome-market-data-" + stage.toLowerCase();
-        return new BacktestDriver(entries, strategy, exchangeMap, adapter, s3Client, bucket, recorder);
+        return new BacktestDriver(entries, strategy, exchangeMap, adapter, priceWriter, s3Client, bucket, recorder);
+    }
+
+    /**
+     * Builds the price buffer for a backtest, with a slot for every configured listing. Pass the result to both
+     * {@link #buildOms} and {@link #create}.
+     */
+    public static BacktestPrices buildPrices(BacktestConfig config) {
+        int capacity = Math.max(1, config.listings.size());
+        SharedPriceBuffer buffer = new SharedPriceBuffer(capacity);
+        PriceSlotRegistry registry = new PriceSlotRegistry(capacity);
+        for (ListingSimConfig lsc : config.listings) {
+            registry.register(lsc.listingId);
+        }
+        return new BacktestPrices(buffer, registry);
     }
 
     /**
@@ -80,8 +101,9 @@ public final class BacktestDriverFactory {
      * to a parameter map. Order-time and market-time policies are split and loaded into the
      * global groups via {@link RiskEngine#withPolicies}.
      */
-    public static OrderManagementSystem buildOms(RiskConfig risk, SecurityMaster securityMaster) {
-        RiskEngine engine = buildRiskEngine(risk);
+    public static OrderManagementSystem buildOms(
+            RiskConfig risk, SecurityMaster securityMaster, BacktestPrices prices) {
+        RiskEngine engine = buildRiskEngine(risk, prices);
         SharedPositionBuffer sharedBuffer = new SharedPositionBuffer(64);
         return new OrderManagementSystem(
                 new ConsoleLogger(new SystemEpochNanoClock()),
@@ -89,16 +111,16 @@ public final class BacktestDriverFactory {
                 new DefaultPositionTracker(sharedBuffer),
                 engine,
                 securityMaster,
-                null,
-                null);
+                prices.buffer(),
+                prices.registry());
     }
 
-    private static RiskEngine buildRiskEngine(RiskConfig risk) {
+    private static RiskEngine buildRiskEngine(RiskConfig risk, BacktestPrices prices) {
         if (risk == null || risk.policies.isEmpty()) {
             return new RiskEngine();
         }
 
-        final PolicyFactory factory = new PolicyFactory();
+        final PolicyFactory factory = new PolicyFactory(prices.buffer(), prices.registry());
         final ObjectMapper mapper = new ObjectMapper();
         final List<OrderRiskPolicy> orderPolicies = new ArrayList<>();
         final List<MarketRiskPolicy> marketPolicies = new ArrayList<>();

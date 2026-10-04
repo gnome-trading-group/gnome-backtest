@@ -7,6 +7,7 @@ import group.gnometrading.RegistryConnection;
 import group.gnometrading.SecurityMaster;
 import group.gnometrading.backtest.config.BacktestConfig;
 import group.gnometrading.backtest.config.BacktestDriverFactory;
+import group.gnometrading.backtest.config.BacktestPrices;
 import group.gnometrading.backtest.config.ListingSimConfig;
 import group.gnometrading.backtest.config.RiskConfig;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
@@ -53,7 +54,8 @@ class BacktestDriverIntegrationTest {
         config.listings = List.of(lsc);
         config.profiles = Map.of("default", new ExchangeProfileConfig());
 
-        OrderManagementSystem oms = BacktestDriverFactory.buildOms(config.risk, securityMaster);
+        BacktestPrices prices = BacktestDriverFactory.buildPrices(config);
+        OrderManagementSystem oms = BacktestDriverFactory.buildOms(config.risk, securityMaster, prices);
         PositionView positionView = oms.getPositionTracker().createPositionView(0);
 
         MomentumCallback callback = new MomentumCallback();
@@ -62,7 +64,8 @@ class BacktestDriverIntegrationTest {
         BacktestRecorder recorder = new BacktestRecorder(config.recordDepth);
         S3Client s3Client = S3Client.create();
 
-        BacktestDriver driver = BacktestDriverFactory.create(config, securityMaster, oms, strategy, recorder, s3Client);
+        BacktestDriver driver =
+                BacktestDriverFactory.create(config, securityMaster, oms, strategy, recorder, s3Client, prices);
         driver.prepareData();
         driver.fullyExecute();
 
@@ -92,7 +95,8 @@ class BacktestDriverIntegrationTest {
         config.listings = List.of(lsc);
         config.profiles = Map.of("default", new ExchangeProfileConfig());
 
-        OrderManagementSystem oms = BacktestDriverFactory.buildOms(config.risk, securityMaster);
+        BacktestPrices prices = BacktestDriverFactory.buildPrices(config);
+        OrderManagementSystem oms = BacktestDriverFactory.buildOms(config.risk, securityMaster, prices);
         PositionView positionView = oms.getPositionTracker().createPositionView(0);
 
         SpammingMarketMakerCallback callback = new SpammingMarketMakerCallback();
@@ -101,7 +105,8 @@ class BacktestDriverIntegrationTest {
         BacktestRecorder recorder = new BacktestRecorder(config.recordDepth);
         S3Client s3Client = S3Client.create();
 
-        BacktestDriver driver = BacktestDriverFactory.create(config, securityMaster, oms, strategy, recorder, s3Client);
+        BacktestDriver driver =
+                BacktestDriverFactory.create(config, securityMaster, oms, strategy, recorder, s3Client, prices);
         driver.prepareData();
         driver.fullyExecute();
 

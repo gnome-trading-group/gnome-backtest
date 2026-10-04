@@ -5,6 +5,7 @@ import group.gnometrading.backtest.oms.OmsBacktestAdapter;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
 import group.gnometrading.backtest.recorder.MetricAware;
 import group.gnometrading.data.MarketDataEntry;
+import group.gnometrading.oms.pnl.PriceWriterAgent;
 import group.gnometrading.schemas.ExecType;
 import group.gnometrading.schemas.Intent;
 import group.gnometrading.schemas.IntentDecoder;
@@ -53,6 +54,7 @@ public final class BacktestDriver {
     // Map of exchangeId -> (securityId -> SimulatedExchange)
     private final Map<Integer, Map<Integer, SimulatedExchange>> exchanges;
     private final OmsBacktestAdapter adapter;
+    private final PriceWriterAgent priceWriter;
     private final S3Client s3Client;
     private final String bucket;
 
@@ -71,6 +73,7 @@ public final class BacktestDriver {
             StrategyAgent strategy,
             Map<Integer, Map<Integer, SimulatedExchange>> exchanges,
             OmsBacktestAdapter adapter,
+            PriceWriterAgent priceWriter,
             S3Client s3Client,
             String bucket,
             BacktestRecorder recorder) {
@@ -78,6 +81,7 @@ public final class BacktestDriver {
         this.strategy = strategy;
         this.exchanges = exchanges;
         this.adapter = adapter;
+        this.priceWriter = priceWriter;
         this.s3Client = s3Client;
         this.bucket = bucket;
         this.recorder = recorder;
@@ -276,6 +280,8 @@ public final class BacktestDriver {
                     recorder.onMarketData(event.timestamp(), schema);
                 }
                 strategy.submitMarketData(schema);
+                // Before the strategy acts, so the OMS values its intents against the same book it saw.
+                priceWriter.doWork();
                 stepStrategy();
                 List<Intent> intents = drainIntents();
                 List<LocalMessage> messages = adapter.processIntents(event.timestamp(), intents);

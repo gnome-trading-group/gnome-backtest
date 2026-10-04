@@ -20,7 +20,6 @@ import group.gnometrading.sequencer.SequencedPoller;
 import group.gnometrading.sequencer.SequencedRingBuffer;
 import java.util.ArrayList;
 import java.util.List;
-import org.agrona.concurrent.SystemEpochNanoClock;
 import org.agrona.concurrent.UnsafeBuffer;
 
 /**
@@ -54,6 +53,9 @@ public final class OmsBacktestAdapter {
 
     private static final int OUTBOUND_BUFFER_SIZE = 64;
 
+    // The OMS times risk re-sweeps and stamps orders off its clock; wall time would make runs nondeterministic.
+    private long simulatedNanos;
+
     public OmsBacktestAdapter(final OrderManagementSystem oms) {
         this(oms, null);
     }
@@ -75,7 +77,7 @@ public final class OmsBacktestAdapter {
                 execReportBuffer,
                 orderOutboundBuffer,
                 strategyExecReportBuffer,
-                new SystemEpochNanoClock());
+                () -> simulatedNanos);
         this.orderOutboundPoller = orderOutboundBuffer.createPoller(this::onOrderOutboundEvent);
         this.strategyExecReportPoller = strategyExecReportBuffer.createPoller(this::onStrategyExecReportEvent);
 
@@ -85,6 +87,7 @@ public final class OmsBacktestAdapter {
 
     public List<LocalMessage> processIntents(final long timestamp, final Intent[] intents, final int count)
             throws Exception {
+        simulatedNanos = timestamp;
         messageBuffer.clear();
         strategyExecReports.clear();
         for (int i = 0; i < count; i++) {
@@ -103,6 +106,7 @@ public final class OmsBacktestAdapter {
     }
 
     public List<LocalMessage> processIntents(final long timestamp, final List<Intent> intents) throws Exception {
+        simulatedNanos = timestamp;
         messageBuffer.clear();
         strategyExecReports.clear();
         for (Intent intent : intents) {
@@ -121,6 +125,7 @@ public final class OmsBacktestAdapter {
     }
 
     public List<LocalMessage> processExecutionReport(final OrderExecutionReport report) throws Exception {
+        simulatedNanos = report.decoder.timestampRecv();
         if (recorder != null) {
             long clientOid = report.getClientOidCounter();
             Side side = Side.None;

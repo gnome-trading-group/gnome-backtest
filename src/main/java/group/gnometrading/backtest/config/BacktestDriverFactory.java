@@ -105,6 +105,10 @@ public final class BacktestDriverFactory {
 
         for (Map.Entry<String, Map<String, Object>> entry : risk.policies.entrySet()) {
             final RiskPolicyType type = RiskPolicyType.valueOf(entry.getKey());
+            if (type.category() == RiskPolicyType.Category.KILL) {
+                throw new IllegalArgumentException(
+                        type + " stops all trading and has no meaning in a backtest; remove it from risk.policies");
+            }
             final Map<String, Object> params = entry.getValue() != null ? entry.getValue() : Map.of();
             final Configurable policy = factory.create(type);
             try {
@@ -115,6 +119,7 @@ public final class BacktestDriverFactory {
             switch (type.category()) {
                 case ORDER -> orderPolicies.add((OrderRiskPolicy) policy);
                 case MARKET -> marketPolicies.add((MarketRiskPolicy) policy);
+                case KILL -> throw new IllegalStateException("unreachable: kill switches are rejected above");
             }
         }
 

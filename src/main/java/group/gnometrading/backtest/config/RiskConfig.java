@@ -12,8 +12,7 @@ public class RiskConfig {
      * <p>Example:
      * <pre>
      * MAX_NOTIONAL:
-     *   maxNotionalValue: 100000
-     * KILL_SWITCH: {}
+     *   maxNotionalValue: 100000000000000   # $100,000 in price units (1e9 = $1)
      * </pre>
      */
     public Map<String, Map<String, Object>> policies = new LinkedHashMap<>();

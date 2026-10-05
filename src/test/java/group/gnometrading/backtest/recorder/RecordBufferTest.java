@@ -161,4 +161,16 @@ class RecordBufferTest {
         assertEquals(0, row);
         assertEquals(1, buf.getCount());
     }
+
+    @Test
+    void zeroInitialCapacityStillGrows() {
+        RecordBuffer buffer = new RecordBuffer("empty", 0);
+        int col = buffer.addLongColumn("value");
+        buffer.freeze();
+        for (int i = 0; i < 5; i++) {
+            buffer.setLong(buffer.appendRow(), col, i);
+        }
+        assertEquals(5, buffer.getCount());
+        assertEquals(4L, buffer.getLongColumn(col)[4]);
+    }
 }

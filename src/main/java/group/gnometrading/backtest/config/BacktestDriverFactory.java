@@ -143,7 +143,8 @@ public final class BacktestDriverFactory {
                         type + " stops all trading and has no meaning in a backtest; remove it from risk.policies");
             }
             final Map<String, Object> params = entry.getValue() != null ? entry.getValue() : Map.of();
-            final Configurable policy = factory.create(type);
+            // Backtest policies name no listing, so limits that add up across listings judge the strategy's total.
+            final Configurable policy = factory.create(type, true);
             try {
                 policy.reconfigure(new ViewString(mapper.writeValueAsString(params)));
             } catch (JsonProcessingException e) {

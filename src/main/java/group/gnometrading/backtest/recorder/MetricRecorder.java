@@ -21,6 +21,14 @@ public final class MetricRecorder {
     }
 
     /**
+     * A recorder for a run that records nothing: strategies can still declare and write their metrics, and the
+     * writes are dropped.
+     */
+    public static MetricRecorder discarding() {
+        return new MetricRecorder(null);
+    }
+
+    /**
      * Creates a new named record stream backed by a fresh {@link RecordBuffer}.
      *
      * <p>Callers must add columns and call {@link RecordBuffer#freeze()} before the backtest starts.
@@ -29,7 +37,7 @@ public final class MetricRecorder {
      * @param initialCapacity initial row capacity (grows by 2× automatically)
      */
     public RecordBuffer createBuffer(String name, int initialCapacity) {
-        return recorder.createBuffer(name, initialCapacity);
+        return recorder == null ? RecordBuffer.discarding(name) : recorder.createBuffer(name, initialCapacity);
     }
 
     /**

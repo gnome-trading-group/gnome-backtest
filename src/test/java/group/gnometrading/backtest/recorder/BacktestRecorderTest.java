@@ -3,10 +3,12 @@ package group.gnometrading.backtest.recorder;
 import static org.junit.jupiter.api.Assertions.*;
 
 import group.gnometrading.schemas.Action;
+import group.gnometrading.schemas.CancelOrder;
 import group.gnometrading.schemas.ExecType;
 import group.gnometrading.schemas.Intent;
 import group.gnometrading.schemas.Mbp10Decoder;
 import group.gnometrading.schemas.Mbp10Schema;
+import group.gnometrading.schemas.ModifyOrder;
 import group.gnometrading.schemas.Order;
 import group.gnometrading.schemas.OrderExecutionReport;
 import group.gnometrading.schemas.OrderExecutionReportDecoder;
@@ -287,6 +289,186 @@ class BacktestRecorderTest {
             }
         }
         assertEquals(BacktestRecorder.STATUS_CANCELLED, statusByte);
+    }
+
+    /** The value of a long column in the first order record. */
+    private long orderLong(String column) {
+        RecordBuffer orders = recorder.getOrderRecords();
+        for (ColumnDef col : orders.getColumns()) {
+            if (col.name().equals(column)) {
+                return orders.getLongColumn(col.columnIndex())[0];
+            }
+        }
+        throw new AssertionError("no column " + column);
+    }
+
+    private int orderInt(String column) {
+        RecordBuffer orders = recorder.getOrderRecords();
+        for (ColumnDef col : orders.getColumns()) {
+            if (col.name().equals(column)) {
+                return orders.getIntColumn(col.columnIndex())[0];
+            }
+        }
+        throw new AssertionError("no column " + column);
+    }
+
+    private static ModifyOrder makeModify(long clientOid, long price, long size) {
+        ModifyOrder modify = new ModifyOrder();
+        modify.encoder.exchangeId((short) 1).securityId(100).price(price).size(size);
+        modify.encodeClientOid(clientOid, 0);
+        return modify;
+    }
+
+    private static CancelOrder makeCancel(long clientOid) {
+        CancelOrder cancel = new CancelOrder();
+        cancel.encoder.exchangeId((short) 1).securityId(100);
+        cancel.encodeClientOid(clientOid, 0);
+        return cancel;
+    }
+
+    @Test
+    void testCancelRejectLeavesTheOrderWorkingAndLaterFillsCount() {
+        long clientOid = 7L;
+        recorder.onOrderSubmitted(1000L, makeLimitOrder(1, 100, 10_000_000L, 50L, Side.Bid, clientOid));
+        recorder.onExecution(
+                1001L, makeExecReport(1, 100, ExecType.NEW, OrderStatus.NEW, 0, 0, 0, 50L, 0, clientOid), 0, Side.Bid);
+        recorder.onCancelSubmitted(makeCancel(clientOid));
+        recorder.onExecution(
+                1002L,
+                makeExecReport(1, 100, ExecType.CANCEL_REJECT, OrderStatus.NEW, 0, 0, 0, 0, 0, clientOid),
+                0,
+                Side.Bid);
+        assertEquals(0, recorder.getOrderRecordCount());
+
+        recorder.onExecution(
+                1003L,
+                makeExecReport(1, 100, ExecType.FILL, OrderStatus.FILLED, 10_000_000L, 50L, 50L, 0, 0, clientOid),
+                0,
+                Side.Bid);
+
+        assertEquals(1, recorder.getOrderRecordCount());
+        assertEquals(50L, orderLong("filled_qty"));
+    }
+
+    @Test
+    void testAcknowledgedModifyUpdatesFinalPriceAndSize() {
+        long clientOid = 8L;
+        recorder.onOrderSubmitted(1000L, makeLimitOrder(1, 100, 10_000_000L, 50L, Side.Bid, clientOid));
+        recorder.onExecution(
+                1001L, makeExecReport(1, 100, ExecType.NEW, OrderStatus.NEW, 0, 0, 0, 50L, 0, clientOid), 0, Side.Bid);
+        recorder.onModifySubmitted(makeModify(clientOid, 11_000_000L, 60L));
+        recorder.onExecution(
+                1002L, makeExecReport(1, 100, ExecType.NEW, OrderStatus.NEW, 0, 0, 0, 60L, 0, clientOid), 0, Side.Bid);
+        recorder.onExecution(
+                1003L,
+                makeExecReport(1, 100, ExecType.CANCEL, OrderStatus.CANCELED, 0, 0, 0, 0, 0, clientOid),
+                0,
+                Side.Bid);
+
+        assertEquals(10_000_000L, orderLong("submit_price"));
+        assertEquals(50L, orderLong("submit_size"));
+        assertEquals(11_000_000L, orderLong("final_price"));
+        assertEquals(60L, orderLong("final_size"));
+        assertEquals(1, orderInt("modify_count"));
+        // The first NEW is still the order's acknowledgement.
+        assertEquals(1001L, orderLong("ack_timestamp"));
+    }
+
+    @Test
+    void testRefusedCancelDoesNotConsumeAPendingModify() {
+        long clientOid = 9L;
+        recorder.onOrderSubmitted(1000L, makeLimitOrder(1, 100, 10_000_000L, 50L, Side.Bid, clientOid));
+        recorder.onExecution(
+                1001L, makeExecReport(1, 100, ExecType.NEW, OrderStatus.NEW, 0, 0, 0, 50L, 0, clientOid), 0, Side.Bid);
+        recorder.onCancelSubmitted(makeCancel(clientOid));
+        recorder.onModifySubmitted(makeModify(clientOid, 12_000_000L, 40L));
+        // The venue refuses the cancel, then acknowledges the modify.
+        recorder.onExecution(
+                1002L,
+                makeExecReport(1, 100, ExecType.CANCEL_REJECT, OrderStatus.NEW, 0, 0, 0, 0, 0, clientOid),
+                0,
+                Side.Bid);
+        recorder.onExecution(
+                1003L, makeExecReport(1, 100, ExecType.NEW, OrderStatus.NEW, 0, 0, 0, 40L, 0, clientOid), 0, Side.Bid);
+        recorder.onExecution(
+                1004L,
+                makeExecReport(1, 100, ExecType.CANCEL, OrderStatus.CANCELED, 0, 0, 0, 0, 0, clientOid),
+                0,
+                Side.Bid);
+
+        assertEquals(12_000_000L, orderLong("final_price"));
+        assertEquals(1, orderInt("modify_count"));
+    }
+
+    @Test
+    void testRefusedModifyLeavesFinalPriceUnchanged() {
+        long clientOid = 10L;
+        recorder.onOrderSubmitted(1000L, makeLimitOrder(1, 100, 10_000_000L, 50L, Side.Bid, clientOid));
+        recorder.onExecution(
+                1001L, makeExecReport(1, 100, ExecType.NEW, OrderStatus.NEW, 0, 0, 0, 50L, 0, clientOid), 0, Side.Bid);
+        recorder.onModifySubmitted(makeModify(clientOid, 12_000_000L, 40L));
+        recorder.onExecution(
+                1002L,
+                makeExecReport(1, 100, ExecType.CANCEL_REJECT, OrderStatus.NEW, 0, 0, 0, 0, 0, clientOid),
+                0,
+                Side.Bid);
+        recorder.onExecution(
+                1003L,
+                makeExecReport(1, 100, ExecType.CANCEL, OrderStatus.CANCELED, 0, 0, 0, 0, 0, clientOid),
+                0,
+                Side.Bid);
+
+        assertEquals(10_000_000L, orderLong("final_price"));
+        assertEquals(50L, orderLong("final_size"));
+        assertEquals(0, orderInt("modify_count"));
+    }
+
+    @Test
+    void testOrdersStillWorkingAtTheEndAreRecordedAsOpen() {
+        long clientOid = 11L;
+        recorder.onOrderSubmitted(1000L, makeLimitOrder(1, 100, 10_000_000L, 50L, Side.Bid, clientOid));
+        recorder.onExecution(
+                1001L, makeExecReport(1, 100, ExecType.NEW, OrderStatus.NEW, 0, 0, 0, 50L, 0, clientOid), 0, Side.Bid);
+        recorder.onExecution(
+                1002L,
+                makeExecReport(
+                        1,
+                        100,
+                        ExecType.PARTIAL_FILL,
+                        OrderStatus.PARTIALLY_FILLED,
+                        10_000_000L,
+                        20L,
+                        20L,
+                        30L,
+                        0,
+                        clientOid),
+                0,
+                Side.Bid);
+        assertEquals(0, recorder.getOrderRecordCount());
+
+        recorder.closeOpenOrders(5000L);
+
+        assertEquals(1, recorder.getOrderRecordCount());
+        assertEquals(30L, orderLong("leaves_qty"));
+        assertEquals(20L, orderLong("filled_qty"));
+        assertEquals(5000L, orderLong("terminal_timestamp"));
+        RecordBuffer orders = recorder.getOrderRecords();
+        for (ColumnDef col : orders.getColumns()) {
+            if (col.name().equals("final_status")) {
+                assertEquals(BacktestRecorder.STATUS_OPEN, orders.getByteColumn(col.columnIndex())[0]);
+            }
+        }
+    }
+
+    @Test
+    void testDiscardingMetricRecorderAcceptsWritesAndKeepsNone() {
+        RecordBuffer buffer = MetricRecorder.discarding().createBuffer("signals");
+        int col = buffer.addDoubleColumn("value");
+        buffer.freeze();
+        for (int i = 0; i < 10; i++) {
+            buffer.setDouble(buffer.appendRow(), col, i);
+        }
+        assertEquals(0, buffer.getCount());
     }
 
     @Test

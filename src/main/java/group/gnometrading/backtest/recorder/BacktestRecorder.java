@@ -3,12 +3,14 @@ package group.gnometrading.backtest.recorder;
 import group.gnometrading.oms.position.Position;
 import group.gnometrading.schemas.Bbo1mSchema;
 import group.gnometrading.schemas.Bbo1sSchema;
+import group.gnometrading.schemas.CancelOrder;
 import group.gnometrading.schemas.ExecType;
 import group.gnometrading.schemas.Intent;
 import group.gnometrading.schemas.IntentDecoder;
 import group.gnometrading.schemas.MboSchema;
 import group.gnometrading.schemas.Mbp10Schema;
 import group.gnometrading.schemas.Mbp1Schema;
+import group.gnometrading.schemas.ModifyOrder;
 import group.gnometrading.schemas.Ohlcv1hSchema;
 import group.gnometrading.schemas.Ohlcv1mSchema;
 import group.gnometrading.schemas.Ohlcv1sSchema;
@@ -19,9 +21,11 @@ import group.gnometrading.schemas.Schema;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.Statics;
 import group.gnometrading.schemas.TradesSchema;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 
 /**
@@ -95,6 +99,9 @@ public final class BacktestRecorder {
     private final int ordOrderType;
     private final int ordSubmitPrice;
     private final int ordSubmitSize;
+    private final int ordFinalPrice;
+    private final int ordFinalSize;
+    private final int ordModifyCount;
     private final int ordFilledQty;
     private final int ordLeavesQty;
     private final int ordTotalCost;
@@ -150,10 +157,23 @@ public final class BacktestRecorder {
         byte orderType;
         long submitPrice;
         long submitSize;
+        // The price and size after the last acknowledged modify; the submitted ones until then.
+        long finalPrice;
+        long finalSize;
+        int modifyCount;
+        /**
+         * Modifies and cancels sent and not yet answered, oldest first: {@code {price, size}} for a modify,
+         * {@link #PENDING_CANCEL} for a cancel. The venue answers them in turn, so the oldest is the one an ack or a
+         * refusal belongs to.
+         */
+        final ArrayDeque<long[]> pendingRequests = new ArrayDeque<>();
+
         long filledQty = 0;
         long totalCost = 0;
         double totalFee = 0.0;
     }
+
+    private static final long[] PENDING_CANCEL = new long[0];
 
     private final HashMap<Long, InFlightOrder> inFlight = new HashMap<>();
 
@@ -183,6 +203,8 @@ public final class BacktestRecorder {
     public static final byte STATUS_REJECTED = 3;
     /** Final-status byte encoding: Expired. */
     public static final byte STATUS_EXPIRED = 4;
+    /** Still working when the run ended; written by {@link #closeOpenOrders}. */
+    public static final byte STATUS_OPEN = 5;
 
     // =========================================================================
     // Constructors
@@ -237,6 +259,9 @@ public final class BacktestRecorder {
         ordOrderType = ord.addByteColumn("order_type");
         ordSubmitPrice = ord.addLongColumn("submit_price");
         ordSubmitSize = ord.addLongColumn("submit_size");
+        ordFinalPrice = ord.addLongColumn("final_price");
+        ordFinalSize = ord.addLongColumn("final_size");
+        ordModifyCount = ord.addIntColumn("modify_count");
         ordFilledQty = ord.addLongColumn("filled_qty");
         ordLeavesQty = ord.addLongColumn("leaves_qty");
         ordTotalCost = ord.addLongColumn("total_cost");
@@ -319,7 +344,25 @@ public final class BacktestRecorder {
         ifo.orderType = encodeOrderType(order.decoder.orderType().name());
         ifo.submitPrice = order.decoder.price();
         ifo.submitSize = order.decoder.size();
+        ifo.finalPrice = ifo.submitPrice;
+        ifo.finalSize = ifo.submitSize;
         inFlight.put(clientOid, ifo);
+    }
+
+    /** A modify sent for a working order; its new price and size apply once the venue acknowledges it. */
+    public void onModifySubmitted(ModifyOrder modify) {
+        InFlightOrder ifo = inFlight.get(modify.getClientOidCounter());
+        if (ifo != null) {
+            ifo.pendingRequests.add(new long[] {modify.decoder.price(), modify.decoder.size()});
+        }
+    }
+
+    /** A cancel sent for a working order, so that a refusal of it is not taken for a refused modify. */
+    public void onCancelSubmitted(CancelOrder cancel) {
+        InFlightOrder ifo = inFlight.get(cancel.getClientOidCounter());
+        if (ifo != null) {
+            ifo.pendingRequests.add(PENDING_CANCEL);
+        }
     }
 
     /**
@@ -343,7 +386,8 @@ public final class BacktestRecorder {
             }
             case CANCEL -> finalizeOrder(timestamp, clientOid, report.decoder.leavesQty(), STATUS_CANCELLED);
             case REJECT -> finalizeOrder(timestamp, clientOid, 0, STATUS_REJECTED);
-            case CANCEL_REJECT -> finalizeOrder(timestamp, clientOid, 0, STATUS_REJECTED);
+                // A refused cancel or modify: the order is still working, as it was.
+            case CANCEL_REJECT -> answerOldestRequest(clientOid);
             case EXPIRE -> finalizeOrder(timestamp, clientOid, report.decoder.leavesQty(), STATUS_EXPIRED);
             default -> {
                 /* NULL_VAL — ignore */
@@ -456,10 +500,43 @@ public final class BacktestRecorder {
     // Internal helpers
     // =========================================================================
 
+    /**
+     * Writes a record for every order still working at {@code timestamp}, with status {@link #STATUS_OPEN}, so a
+     * run's order records cover every order it sent. Call once, when the run is over.
+     */
+    public void closeOpenOrders(long timestamp) {
+        for (long clientOid : new ArrayList<>(inFlight.keySet())) {
+            InFlightOrder ifo = inFlight.get(clientOid);
+            finalizeOrder(timestamp, clientOid, Math.max(0, ifo.finalSize - ifo.filledQty), STATUS_OPEN);
+        }
+    }
+
     private void ackOrder(long timestamp, long clientOid) {
         InFlightOrder ifo = inFlight.get(clientOid);
-        if (ifo != null && ifo.ackTimestamp == 0) {
+        if (ifo == null) {
+            return;
+        }
+        if (ifo.ackTimestamp == 0) {
             ifo.ackTimestamp = timestamp;
+            return;
+        }
+        // A NEW on an order already acknowledged acknowledges its oldest outstanding modify.
+        for (Iterator<long[]> it = ifo.pendingRequests.iterator(); it.hasNext(); ) {
+            long[] request = it.next();
+            if (request != PENDING_CANCEL) {
+                it.remove();
+                ifo.finalPrice = request[0];
+                ifo.finalSize = request[1];
+                ifo.modifyCount++;
+                return;
+            }
+        }
+    }
+
+    private void answerOldestRequest(long clientOid) {
+        InFlightOrder ifo = inFlight.get(clientOid);
+        if (ifo != null) {
+            ifo.pendingRequests.poll();
         }
     }
 
@@ -523,6 +600,9 @@ public final class BacktestRecorder {
         orderRecords.setByte(idx, ordOrderType, ifo.orderType);
         orderRecords.setLong(idx, ordSubmitPrice, ifo.submitPrice);
         orderRecords.setLong(idx, ordSubmitSize, ifo.submitSize);
+        orderRecords.setLong(idx, ordFinalPrice, ifo.finalPrice);
+        orderRecords.setLong(idx, ordFinalSize, ifo.finalSize);
+        orderRecords.setInt(idx, ordModifyCount, ifo.modifyCount);
         orderRecords.setLong(idx, ordFilledQty, ifo.filledQty);
         orderRecords.setLong(idx, ordLeavesQty, leavesQty);
         orderRecords.setLong(idx, ordTotalCost, ifo.totalCost);

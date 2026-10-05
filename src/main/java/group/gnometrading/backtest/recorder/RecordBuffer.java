@@ -42,10 +42,23 @@ public final class RecordBuffer {
 
     private int count = 0;
     private int capacity;
+    // Writes all land on one reused row and nothing is kept, for metrics nobody records.
+    private final boolean discarding;
 
     public RecordBuffer(String name, int initialCapacity) {
+        this(name, initialCapacity, false);
+    }
+
+    private RecordBuffer(String name, int initialCapacity, boolean discarding) {
         this.name = name;
-        this.capacity = initialCapacity;
+        // At least one row, or doubling an empty buffer never makes room.
+        this.capacity = Math.max(1, initialCapacity);
+        this.discarding = discarding;
+    }
+
+    /** A buffer that accepts writes and keeps none of them; its count stays 0. */
+    public static RecordBuffer discarding(String name) {
+        return new RecordBuffer(name, 1, true);
     }
 
     // =========================================================================
@@ -112,6 +125,9 @@ public final class RecordBuffer {
      */
     public int appendRow() {
         checkFrozen();
+        if (discarding) {
+            return 0;
+        }
         if (count == capacity) {
             grow();
         }

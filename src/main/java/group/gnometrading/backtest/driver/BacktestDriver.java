@@ -369,8 +369,14 @@ public final class BacktestDriver {
             SimulatedExchange exchange = getExchangeForMessage(message);
             long deliveryTs = eventTimestamp + processingTime + exchange.simulateNetworkLatency();
             enqueue(deliveryTs, EventType.LOCAL_MESSAGE, message);
-            if (recorder != null && message instanceof LocalMessage.OrderMessage om) {
-                recorder.onOrderSubmitted(eventTimestamp, om.order());
+            if (recorder != null) {
+                if (message instanceof LocalMessage.OrderMessage om) {
+                    recorder.onOrderSubmitted(eventTimestamp, om.order());
+                } else if (message instanceof LocalMessage.ModifyOrderMessage mm) {
+                    recorder.onModifySubmitted(mm.modifyOrder());
+                } else if (message instanceof LocalMessage.CancelOrderMessage cm) {
+                    recorder.onCancelSubmitted(cm.cancelOrder());
+                }
             }
         }
     }

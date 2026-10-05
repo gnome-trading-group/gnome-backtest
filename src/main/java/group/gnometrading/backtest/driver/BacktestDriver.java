@@ -6,7 +6,6 @@ import group.gnometrading.backtest.recorder.BacktestRecorder;
 import group.gnometrading.backtest.recorder.MetricAware;
 import group.gnometrading.data.MarketDataEntry;
 import group.gnometrading.oms.pnl.PriceWriterAgent;
-import group.gnometrading.schemas.ExecType;
 import group.gnometrading.schemas.Intent;
 import group.gnometrading.schemas.IntentDecoder;
 import group.gnometrading.schemas.MessageHeaderDecoder;
@@ -263,12 +262,7 @@ public final class BacktestDriver {
             case EXCHANGE_MARKET_DATA -> {
                 Schema schema = (Schema) event.data();
                 SimulatedExchange exchange = getExchange(schema);
-                List<OrderExecutionReport> reports = exchange.onMarketData(schema);
-                for (OrderExecutionReport report : reports) {
-                    long deliveryTs = event.timestamp() + exchange.simulateNetworkLatency();
-                    report.encoder.timestampEvent(event.timestamp()).timestampRecv(deliveryTs);
-                    enqueue(deliveryTs, EventType.EXCHANGE_MESSAGE, report);
-                }
+                deliverReports(exchange, event.timestamp(), exchange.onMarketData(schema));
             }
             case EXCHANGE_MESSAGE -> {
                 OrderExecutionReport report = (OrderExecutionReport) event.data();
@@ -296,30 +290,41 @@ public final class BacktestDriver {
             case LOCAL_MESSAGE -> {
                 LocalMessage message = (LocalMessage) event.data();
                 SimulatedExchange exchange = getExchangeForMessage(message);
-
-                List<OrderExecutionReport> reports;
-                boolean isMaker = true;
+                List<OrderExecutionReport> rejects;
                 if (message instanceof LocalMessage.OrderMessage om) {
-                    reports = exchange.submitOrder(om.order());
-                    isMaker = reports.stream()
-                            .noneMatch(r -> r.decoder.execType() == ExecType.FILL
-                                    || r.decoder.execType() == ExecType.PARTIAL_FILL);
+                    rejects = exchange.submitOrder(om.order(), event.timestamp());
                 } else if (message instanceof LocalMessage.CancelOrderMessage cm) {
-                    reports = exchange.cancelOrder(cm.cancelOrder());
+                    rejects = exchange.cancelOrder(cm.cancelOrder(), event.timestamp());
                 } else if (message instanceof LocalMessage.ModifyOrderMessage am) {
-                    reports = exchange.modifyOrder(am.modifyOrder());
+                    rejects = exchange.modifyOrder(am.modifyOrder(), event.timestamp());
                 } else {
                     throw new IllegalStateException("Unknown local message type: " + message.getClass());
                 }
-
-                long processingTime = exchange.simulateOrderProcessingTime(isMaker);
-                for (OrderExecutionReport report : reports) {
-                    long deliveryTs = event.timestamp() + processingTime + exchange.simulateNetworkLatency();
-                    report.encoder.timestampEvent(event.timestamp()).timestampRecv(deliveryTs);
-                    setExchangeIds(report, message);
-                    enqueue(deliveryTs, EventType.EXCHANGE_MESSAGE, report);
-                }
+                deliverReports(exchange, event.timestamp(), rejects);
+                scheduleExchangeProcessing(exchange);
             }
+            case EXCHANGE_PROCESS -> {
+                SimulatedExchange exchange = (SimulatedExchange) event.data();
+                deliverReports(exchange, event.timestamp(), exchange.processDue(event.timestamp()));
+                scheduleExchangeProcessing(exchange);
+            }
+        }
+    }
+
+    /** Sends exchange reports made at {@code eventTimestamp} back to the OMS, one network hop later. */
+    private void deliverReports(SimulatedExchange exchange, long eventTimestamp, List<OrderExecutionReport> reports) {
+        for (OrderExecutionReport report : reports) {
+            long deliveryTs = eventTimestamp + exchange.simulateNetworkLatency();
+            report.encoder.timestampEvent(eventTimestamp).timestampRecv(deliveryTs);
+            enqueue(deliveryTs, EventType.EXCHANGE_MESSAGE, report);
+        }
+    }
+
+    /** Wakes the exchange when the next message it holds comes due. A wakeup with nothing due is harmless. */
+    private void scheduleExchangeProcessing(SimulatedExchange exchange) {
+        long due = exchange.nextDueNanos();
+        if (due != Long.MAX_VALUE) {
+            enqueue(due, EventType.EXCHANGE_PROCESS, exchange);
         }
     }
 
@@ -386,9 +391,5 @@ public final class BacktestDriver {
 
     private SimulatedExchange getExchangeForMessage(LocalMessage message) {
         return exchanges.get(message.exchangeId()).get(message.securityId());
-    }
-
-    private void setExchangeIds(OrderExecutionReport report, LocalMessage message) {
-        report.encoder.exchangeId((short) message.exchangeId()).securityId(message.securityId());
     }
 }

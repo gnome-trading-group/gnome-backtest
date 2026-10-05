@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import group.gnometrading.SecurityMaster;
 import group.gnometrading.backtest.driver.BacktestDriver;
+import group.gnometrading.backtest.driver.SimulatedClock;
 import group.gnometrading.backtest.oms.OmsBacktestAdapter;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
 import group.gnometrading.data.MarketDataEntry;
@@ -20,9 +21,10 @@ import group.gnometrading.oms.risk.OrderRiskPolicy;
 import group.gnometrading.oms.risk.PolicyFactory;
 import group.gnometrading.oms.risk.RiskEngine;
 import group.gnometrading.oms.risk.RiskPolicyType;
-import group.gnometrading.oms.state.RingBufferOrderStateManager;
+import group.gnometrading.oms.state.PooledOrderStateManager;
 import group.gnometrading.simulation.config.ExchangeProfileConfig;
 import group.gnometrading.simulation.exchange.SimulatedExchange;
+import group.gnometrading.simulation.latency.LatencySeeds;
 import group.gnometrading.sm.Listing;
 import group.gnometrading.sm.ListingSpec;
 import group.gnometrading.strategies.StrategyAgent;
@@ -32,7 +34,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import org.agrona.concurrent.SystemEpochNanoClock;
 import software.amazon.awssdk.services.s3.S3Client;
 
 public final class BacktestDriverFactory {
@@ -52,7 +53,7 @@ public final class BacktestDriverFactory {
      * @param strategy        pre-built strategy agent
      * @param recorder        optional recorder; null disables recording
      * @param s3Client        S3 client for market data loading
-     * @param prices          the price buffer the OMS was built with ({@link #buildPrices})
+     * @param context         what the OMS was built with ({@link #buildContext})
      */
     public static BacktestDriver create(
             BacktestConfig config,
@@ -61,36 +62,45 @@ public final class BacktestDriverFactory {
             StrategyAgent strategy,
             BacktestRecorder recorder,
             S3Client s3Client,
-            BacktestPrices prices) {
+            BacktestContext context) {
 
         List<ResolvedListing> resolved = resolveListings(config, securityMaster);
 
         Map<Integer, Map<Integer, SimulatedExchange>> exchangeMap = buildExchangeMap(config, resolved);
         List<MarketDataEntry> entries = buildEntries(config, resolved);
-        OmsBacktestAdapter adapter = new OmsBacktestAdapter(oms, recorder);
+        OmsBacktestAdapter adapter = new OmsBacktestAdapter(oms, context.clock(), recorder);
         PriceWriterAgent priceWriter = new PriceWriterAgent(
-                prices.buffer(), prices.registry(), securityMaster, strategy.getMarketDataBuffer());
+                context.priceBuffer(), context.priceRegistry(), securityMaster, strategy.getMarketDataBuffer());
 
         String stage = System.getenv("STAGE");
         if (stage == null || stage.isEmpty()) {
             stage = "prod";
         }
         String bucket = "gnome-market-data-" + stage.toLowerCase();
-        return new BacktestDriver(entries, strategy, exchangeMap, adapter, priceWriter, s3Client, bucket, recorder);
+        return new BacktestDriver(
+                entries,
+                strategy,
+                exchangeMap,
+                adapter,
+                priceWriter,
+                s3Client,
+                bucket,
+                recorder,
+                config.measureProcessingTime);
     }
 
     /**
-     * Builds the price buffer for a backtest, with a slot for every configured listing. Pass the result to both
-     * {@link #buildOms} and {@link #create}.
+     * Builds what the OMS and driver share: a price buffer with a slot for every configured listing, and the simulated
+     * clock. Pass the result to both {@link #buildOms} and {@link #create}.
      */
-    public static BacktestPrices buildPrices(BacktestConfig config) {
+    public static BacktestContext buildContext(BacktestConfig config) {
         int capacity = Math.max(1, config.listings.size());
         SharedPriceBuffer buffer = new SharedPriceBuffer(capacity);
         PriceSlotRegistry registry = new PriceSlotRegistry(capacity);
         for (ListingSimConfig lsc : config.listings) {
             registry.register(lsc.listingId);
         }
-        return new BacktestPrices(buffer, registry);
+        return new BacktestContext(buffer, registry, new SimulatedClock());
     }
 
     /**
@@ -102,25 +112,26 @@ public final class BacktestDriverFactory {
      * global groups via {@link RiskEngine#withPolicies}.
      */
     public static OrderManagementSystem buildOms(
-            RiskConfig risk, SecurityMaster securityMaster, BacktestPrices prices) {
-        RiskEngine engine = buildRiskEngine(risk, prices);
+            RiskConfig risk, SecurityMaster securityMaster, BacktestContext context) {
+        RiskEngine engine = buildRiskEngine(risk, context);
         SharedPositionBuffer sharedBuffer = new SharedPositionBuffer(64);
         return new OrderManagementSystem(
-                new ConsoleLogger(new SystemEpochNanoClock()),
-                new RingBufferOrderStateManager(),
+                new ConsoleLogger(context.clock()),
+                new PooledOrderStateManager(),
                 new DefaultPositionTracker(sharedBuffer),
                 engine,
                 securityMaster,
-                prices.buffer(),
-                prices.registry());
+                context.priceBuffer(),
+                context.priceRegistry(),
+                context.clock());
     }
 
-    private static RiskEngine buildRiskEngine(RiskConfig risk, BacktestPrices prices) {
+    private static RiskEngine buildRiskEngine(RiskConfig risk, BacktestContext context) {
         if (risk == null || risk.policies.isEmpty()) {
             return new RiskEngine();
         }
 
-        final PolicyFactory factory = new PolicyFactory(prices.buffer(), prices.registry());
+        final PolicyFactory factory = new PolicyFactory(context.priceBuffer(), context.priceRegistry());
         final ObjectMapper mapper = new ObjectMapper();
         final List<OrderRiskPolicy> orderPolicies = new ArrayList<>();
         final List<MarketRiskPolicy> marketPolicies = new ArrayList<>();
@@ -176,7 +187,9 @@ public final class BacktestDriverFactory {
         for (ResolvedListing rl : resolved) {
             int exchangeId = rl.listing.exchange().exchangeId();
             int securityId = rl.listing.security().securityId();
-            map.computeIfAbsent(exchangeId, k -> new HashMap<>()).put(securityId, rl.profile.toSimulatedExchange());
+            long listingSeed = LatencySeeds.derive(config.seed, rl.listing.listingId());
+            map.computeIfAbsent(exchangeId, k -> new HashMap<>())
+                    .put(securityId, rl.profile.toSimulatedExchange(listingSeed));
         }
         return map;
     }

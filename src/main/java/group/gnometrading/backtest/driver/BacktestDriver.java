@@ -48,6 +48,8 @@ import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 public final class BacktestDriver {
 
     private static final Logger logger = Logger.getLogger(BacktestDriver.class.getName());
+    // Caps the re-steps at one timestamp for a strategy that answers every reject with another rejected intent.
+    private static final int MAX_REJECT_PASSES = 16;
 
     private final List<MarketDataEntry> entries;
     private final StrategyAgent strategy;
@@ -57,6 +59,7 @@ public final class BacktestDriver {
     private final PriceWriterAgent priceWriter;
     private final S3Client s3Client;
     private final String bucket;
+    private final boolean measureProcessingTime;
 
     // Drains intents published by the strategy after each doWork() call
     private final SequencedPoller intentPoller;
@@ -65,8 +68,10 @@ public final class BacktestDriver {
     private long lastProcessingTimeNs;
     private BacktestRecorder recorder;
     private PriorityQueue<BacktestEvent> queue;
+    private long nextSequence = 0;
     private boolean ready = false;
     private int eventsProcessed = 0;
+    private boolean warnedRejectLoop = false;
 
     public BacktestDriver(
             List<MarketDataEntry> entries,
@@ -76,7 +81,8 @@ public final class BacktestDriver {
             PriceWriterAgent priceWriter,
             S3Client s3Client,
             String bucket,
-            BacktestRecorder recorder) {
+            BacktestRecorder recorder,
+            boolean measureProcessingTime) {
         this.entries = entries;
         this.strategy = strategy;
         this.exchanges = exchanges;
@@ -85,6 +91,7 @@ public final class BacktestDriver {
         this.s3Client = s3Client;
         this.bucket = bucket;
         this.recorder = recorder;
+        this.measureProcessingTime = measureProcessingTime;
         this.intentPoller = strategy.getIntentBuffer().createPoller(this::collectIntent);
         if (recorder != null && strategy instanceof MetricAware metricAware) {
             metricAware.setMetricRecorder(recorder.createMetricRecorder());
@@ -107,14 +114,24 @@ public final class BacktestDriver {
     }
 
     private void stepStrategy() throws Exception {
+        if (!measureProcessingTime) {
+            strategy.doWork();
+            return;
+        }
         long t0 = System.nanoTime();
         strategy.doWork();
         lastProcessingTimeNs = System.nanoTime() - t0;
     }
 
     private long getProcessingTime() {
-        long override = strategy.simulateProcessingTime();
-        return override > 0 ? override : lastProcessingTimeNs;
+        if (measureProcessingTime) {
+            return lastProcessingTimeNs;
+        }
+        long processingTime = strategy.simulateProcessingTime();
+        if (processingTime < 0) {
+            throw new IllegalStateException("simulateProcessingTime() returned a negative value: " + processingTime);
+        }
+        return processingTime;
     }
 
     /**
@@ -165,8 +182,8 @@ public final class BacktestDriver {
                         continue;
                     }
                     long localTs = exchangeTs + getExchange(schema).simulateNetworkLatency();
-                    queue.add(new BacktestEvent(exchangeTs, EventType.EXCHANGE_MARKET_DATA, schema));
-                    queue.add(new BacktestEvent(localTs, EventType.LOCAL_MARKET_DATA, schema));
+                    enqueue(exchangeTs, EventType.EXCHANGE_MARKET_DATA, schema);
+                    enqueue(localTs, EventType.LOCAL_MARKET_DATA, schema);
                 }
             }
         } catch (InterruptedException e) {
@@ -200,9 +217,9 @@ public final class BacktestDriver {
                 dropped[0]++;
                 return;
             }
-            queue.add(new BacktestEvent(exchangeTs, EventType.EXCHANGE_MARKET_DATA, schema));
+            enqueue(exchangeTs, EventType.EXCHANGE_MARKET_DATA, schema);
             long localTs = exchangeTs + getExchange(schema).simulateNetworkLatency();
-            queue.add(new BacktestEvent(localTs, EventType.LOCAL_MARKET_DATA, schema));
+            enqueue(localTs, EventType.LOCAL_MARKET_DATA, schema);
         });
         if (dropped[0] > 0) {
             logger.warning(String.format(
@@ -250,7 +267,7 @@ public final class BacktestDriver {
                 for (OrderExecutionReport report : reports) {
                     long deliveryTs = event.timestamp() + exchange.simulateNetworkLatency();
                     report.encoder.timestampEvent(event.timestamp()).timestampRecv(deliveryTs);
-                    queue.add(new BacktestEvent(deliveryTs, EventType.EXCHANGE_MESSAGE, report));
+                    enqueue(deliveryTs, EventType.EXCHANGE_MESSAGE, report);
                 }
             }
             case EXCHANGE_MESSAGE -> {
@@ -264,15 +281,7 @@ public final class BacktestDriver {
                 for (OrderExecutionReport forwarded : adapter.getStrategyExecReports()) {
                     strategy.submitExecReport(forwarded);
                 }
-                stepStrategy();
-                List<Intent> strategyIntents = drainIntents();
-                List<LocalMessage> strategyMessages = adapter.processIntents(event.timestamp(), strategyIntents);
-                // Deliver any synthetic risk rejection reports from intent processing
-                for (OrderExecutionReport reject : adapter.getStrategyExecReports()) {
-                    strategy.submitExecReport(reject);
-                }
-                // Strategy messages have an additional processing delay
-                scheduleLocalMessages(event.timestamp(), strategyMessages, getProcessingTime());
+                runStrategy(event.timestamp());
             }
             case LOCAL_MARKET_DATA -> {
                 Schema schema = (Schema) event.data();
@@ -282,14 +291,7 @@ public final class BacktestDriver {
                 strategy.submitMarketData(schema);
                 // Before the strategy acts, so the OMS values its intents against the same book it saw.
                 priceWriter.doWork();
-                stepStrategy();
-                List<Intent> intents = drainIntents();
-                List<LocalMessage> messages = adapter.processIntents(event.timestamp(), intents);
-                // Deliver any synthetic risk rejection reports
-                for (OrderExecutionReport reject : adapter.getStrategyExecReports()) {
-                    strategy.submitExecReport(reject);
-                }
-                scheduleLocalMessages(event.timestamp(), messages, getProcessingTime());
+                runStrategy(event.timestamp());
             }
             case LOCAL_MESSAGE -> {
                 LocalMessage message = (LocalMessage) event.data();
@@ -315,9 +317,41 @@ public final class BacktestDriver {
                     long deliveryTs = event.timestamp() + processingTime + exchange.simulateNetworkLatency();
                     report.encoder.timestampEvent(event.timestamp()).timestampRecv(deliveryTs);
                     setExchangeIds(report, message);
-                    queue.add(new BacktestEvent(deliveryTs, EventType.EXCHANGE_MESSAGE, report));
+                    enqueue(deliveryTs, EventType.EXCHANGE_MESSAGE, report);
                 }
             }
+        }
+    }
+
+    /**
+     * Steps the strategy and routes its intents through the OMS. Risk rejects come back from the OMS at once, as they
+     * do live, so the strategy is stepped again at the same simulated time to react to them rather than at whatever
+     * event comes next.
+     */
+    private void runStrategy(long timestamp) throws Exception {
+        stepStrategy();
+        for (int pass = 1; ; pass++) {
+            List<LocalMessage> messages = adapter.processIntents(timestamp, drainIntents());
+            // Scheduled before the next processIntents call, which reuses the adapter's message list.
+            scheduleLocalMessages(timestamp, messages, getProcessingTime());
+            List<OrderExecutionReport> rejects = adapter.getStrategyExecReports();
+            if (rejects.isEmpty()) {
+                return;
+            }
+            for (OrderExecutionReport reject : rejects) {
+                strategy.submitExecReport(reject);
+            }
+            if (pass == MAX_REJECT_PASSES) {
+                // The remaining rejects reach the strategy on its next event. Warned once: a strategy stuck in this
+                // loop would otherwise log it on every tick.
+                if (!warnedRejectLoop) {
+                    warnedRejectLoop = true;
+                    logger.warning("Strategy still sending rejected intents after " + MAX_REJECT_PASSES
+                            + " passes at timestamp " + timestamp + "; further occurrences are not logged");
+                }
+                return;
+            }
+            stepStrategy();
         }
     }
 
@@ -329,11 +363,15 @@ public final class BacktestDriver {
         for (LocalMessage message : messages) {
             SimulatedExchange exchange = getExchangeForMessage(message);
             long deliveryTs = eventTimestamp + processingTime + exchange.simulateNetworkLatency();
-            queue.add(new BacktestEvent(deliveryTs, EventType.LOCAL_MESSAGE, message));
+            enqueue(deliveryTs, EventType.LOCAL_MESSAGE, message);
             if (recorder != null && message instanceof LocalMessage.OrderMessage om) {
                 recorder.onOrderSubmitted(eventTimestamp, om.order());
             }
         }
+    }
+
+    private void enqueue(long timestamp, EventType eventType, Object data) {
+        queue.add(new BacktestEvent(timestamp, eventType, nextSequence++, data));
     }
 
     private SimulatedExchange getExchange(Schema schema) {

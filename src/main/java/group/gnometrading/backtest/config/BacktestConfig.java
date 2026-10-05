@@ -14,6 +14,9 @@ import java.util.Map;
 
 public class BacktestConfig {
 
+    /** Base seed when the config sets none, so an unconfigured run is still reproducible. */
+    public static final long DEFAULT_SEED = 0x9E3779B97F4A7C15L;
+
     public LocalDateTime startDate;
     public LocalDateTime endDate;
     public List<ListingSimConfig> listings;
@@ -22,6 +25,16 @@ public class BacktestConfig {
     public RiskConfig risk = new RiskConfig();
     public boolean record = true;
     public int recordDepth = 1;
+    /**
+     * When true, strategy processing latency is the measured wall-clock time of each {@code doWork()} call. Off by
+     * default because it makes runs nondeterministic and charges Python strategies for JPype overhead.
+     */
+    public boolean measureProcessingTime = false;
+    /**
+     * Base seed for random latency models. Each listing's network and order-processing models get their own stream
+     * derived from it, unless the model sets a seed itself.
+     */
+    public long seed = DEFAULT_SEED;
 
     public static BacktestConfig fromYaml(Path path) throws IOException {
         ObjectMapper mapper = new ObjectMapper(new YAMLFactory())

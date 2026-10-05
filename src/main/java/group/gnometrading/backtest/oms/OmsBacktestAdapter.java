@@ -1,6 +1,7 @@
 package group.gnometrading.backtest.oms;
 
 import group.gnometrading.backtest.driver.LocalMessage;
+import group.gnometrading.backtest.driver.SimulatedClock;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
 import group.gnometrading.oms.OmsAgent;
 import group.gnometrading.oms.OrderManagementSystem;
@@ -51,17 +52,26 @@ public final class OmsBacktestAdapter {
     private final SequencedPoller orderOutboundPoller;
     private final SequencedPoller strategyExecReportPoller;
 
-    private static final int OUTBOUND_BUFFER_SIZE = 64;
+    /*
+     * Nothing drains the outbound buffers until doWork() returns, and a publish to a full Disruptor buffer parks
+     * the only thread forever. So intents go in batches small enough that one pass can never fill them: a pass
+     * emits at most two cancel-alls (risk changes, then mark moves), each bounded by the 256 open orders the
+     * default PooledOrderStateManager holds, plus at most five actions or three rejects per intent.
+     */
+    private static final int INTENT_BATCH_SIZE = 64;
+    private static final int OUTBOUND_BUFFER_SIZE = 1024;
 
-    // The OMS times risk re-sweeps and stamps orders off its clock; wall time would make runs nondeterministic.
-    private long simulatedNanos;
+    // Shared with the OMS, which stamps its reports and times risk re-sweeps off it.
+    private final SimulatedClock clock;
 
-    public OmsBacktestAdapter(final OrderManagementSystem oms) {
-        this(oms, null);
+    public OmsBacktestAdapter(final OrderManagementSystem oms, final SimulatedClock clock) {
+        this(oms, clock, null);
     }
 
-    public OmsBacktestAdapter(final OrderManagementSystem oms, final BacktestRecorder recorder) {
+    public OmsBacktestAdapter(
+            final OrderManagementSystem oms, final SimulatedClock clock, final BacktestRecorder recorder) {
         this.oms = oms;
+        this.clock = clock;
         this.recorder = recorder;
 
         GlobalSequence globalSequence = new GlobalSequence();
@@ -71,13 +81,8 @@ public final class OmsBacktestAdapter {
         this.strategyExecReportBuffer =
                 new SequencedRingBuffer<>(OrderExecutionReport::new, globalSequence, OUTBOUND_BUFFER_SIZE);
 
-        this.omsAgent = new OmsAgent(
-                oms,
-                intentBuffer,
-                execReportBuffer,
-                orderOutboundBuffer,
-                strategyExecReportBuffer,
-                () -> simulatedNanos);
+        this.omsAgent =
+                new OmsAgent(oms, intentBuffer, execReportBuffer, orderOutboundBuffer, strategyExecReportBuffer, clock);
         this.orderOutboundPoller = orderOutboundBuffer.createPoller(this::onOrderOutboundEvent);
         this.strategyExecReportPoller = strategyExecReportBuffer.createPoller(this::onStrategyExecReportEvent);
 
@@ -85,30 +90,11 @@ public final class OmsBacktestAdapter {
         // doWork() uses pollers to drive the event loop explicitly.
     }
 
-    public List<LocalMessage> processIntents(final long timestamp, final Intent[] intents, final int count)
-            throws Exception {
-        simulatedNanos = timestamp;
-        messageBuffer.clear();
-        strategyExecReports.clear();
-        for (int i = 0; i < count; i++) {
-            if (recorder != null) {
-                recorder.onIntent(timestamp, intents[i]);
-            }
-            Intent slot = intentBuffer.claim();
-            slot.buffer.putBytes(0, intents[i].buffer, 0, intents[i].totalMessageSize());
-            slot.wrap(slot.buffer);
-            intentBuffer.publish();
-        }
-        omsAgent.doWork();
-        orderOutboundPoller.poll();
-        strategyExecReportPoller.poll();
-        return messageBuffer;
-    }
-
     public List<LocalMessage> processIntents(final long timestamp, final List<Intent> intents) throws Exception {
-        simulatedNanos = timestamp;
+        clock.set(timestamp);
         messageBuffer.clear();
         strategyExecReports.clear();
+        int published = 0;
         for (Intent intent : intents) {
             if (recorder != null) {
                 recorder.onIntent(timestamp, intent);
@@ -117,15 +103,20 @@ public final class OmsBacktestAdapter {
             slot.buffer.putBytes(0, intent.buffer, 0, intent.totalMessageSize());
             slot.wrap(slot.buffer);
             intentBuffer.publish();
+            if (++published == INTENT_BATCH_SIZE) {
+                stepOms();
+                published = 0;
+            }
         }
-        omsAgent.doWork();
-        orderOutboundPoller.poll();
-        strategyExecReportPoller.poll();
+        // Runs even with no intents: the OMS re-checks risk and mark moves on every pass.
+        if (published > 0 || intents.isEmpty()) {
+            stepOms();
+        }
         return messageBuffer;
     }
 
     public List<LocalMessage> processExecutionReport(final OrderExecutionReport report) throws Exception {
-        simulatedNanos = report.decoder.timestampRecv();
+        clock.set(report.decoder.timestampRecv());
         if (recorder != null) {
             long clientOid = report.getClientOidCounter();
             Side side = Side.None;
@@ -143,10 +134,14 @@ public final class OmsBacktestAdapter {
         slot.buffer.putBytes(0, report.buffer, 0, report.totalMessageSize());
         slot.wrap(slot.buffer);
         execReportBuffer.publish();
+        stepOms();
+        return messageBuffer;
+    }
+
+    private void stepOms() throws Exception {
         omsAgent.doWork();
         orderOutboundPoller.poll();
         strategyExecReportPoller.poll();
-        return messageBuffer;
     }
 
     /** Returns exec reports forwarded from the OMS to the strategy (real and synthetic rejections). */

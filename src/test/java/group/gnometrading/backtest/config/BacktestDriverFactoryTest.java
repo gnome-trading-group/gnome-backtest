@@ -64,16 +64,16 @@ class BacktestDriverFactoryTest {
 
     @Test
     void buildPricesRegistersEveryConfiguredListing() {
-        BacktestPrices prices = BacktestDriverFactory.buildPrices(config);
-        assertNotEquals(IntToIntHashMap.MISSING, prices.registry().getSlot(LISTING_ID));
+        BacktestContext context = BacktestDriverFactory.buildContext(config);
+        assertNotEquals(IntToIntHashMap.MISSING, context.priceRegistry().getSlot(LISTING_ID));
     }
 
     @Test
     void marketOrderIsValuedFromTheBacktestPriceBuffer() throws Exception {
-        BacktestPrices prices = BacktestDriverFactory.buildPrices(config);
-        OmsBacktestAdapter adapter =
-                new OmsBacktestAdapter(BacktestDriverFactory.buildOms(config.risk, securityMaster, prices));
-        prices.buffer().writeQuote(prices.registry().getSlot(LISTING_ID), DOLLAR / 10, DOLLAR / 4);
+        BacktestContext context = BacktestDriverFactory.buildContext(config);
+        OmsBacktestAdapter adapter = new OmsBacktestAdapter(
+                BacktestDriverFactory.buildOms(config.risk, securityMaster, context), context.clock());
+        context.priceBuffer().writeQuote(context.priceRegistry().getSlot(LISTING_ID), DOLLAR / 10, DOLLAR / 4);
 
         // 4 at the $0.25 ask meets the $1 minimum; without the buffer the OMS had no price and rejected it.
         assertEquals(1, orderCount(adapter.processIntents(0, List.of(marketIntent(Side.Bid, 4 * UNIT)))));
@@ -84,8 +84,8 @@ class BacktestDriverFactoryTest {
     @Test
     void totalPnlLossPolicyBuildsWithTheBacktestPriceBuffer() {
         config.risk.policies.put("MAX_TOTAL_PNL_LOSS", Map.of("maxLoss", 100 * DOLLAR));
-        BacktestPrices prices = BacktestDriverFactory.buildPrices(config);
-        assertDoesNotThrow(() -> BacktestDriverFactory.buildOms(config.risk, securityMaster, prices));
+        BacktestContext context = BacktestDriverFactory.buildContext(config);
+        assertDoesNotThrow(() -> BacktestDriverFactory.buildOms(config.risk, securityMaster, context));
     }
 
     private static long orderCount(List<LocalMessage> messages) {

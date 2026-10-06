@@ -17,6 +17,7 @@ import group.gnometrading.schemas.Ohlcv1sSchema;
 import group.gnometrading.schemas.Order;
 import group.gnometrading.schemas.OrderExecutionReport;
 import group.gnometrading.schemas.OrderExecutionReportDecoder;
+import group.gnometrading.schemas.RejectReason;
 import group.gnometrading.schemas.Schema;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.Statics;
@@ -26,7 +27,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Columnar in-memory recorder for backtest events.
@@ -174,6 +177,10 @@ public final class BacktestRecorder {
     }
 
     private static final long[] PENDING_CANCEL = new long[0];
+
+    // Orders and modifies the OMS refused before they reached the venue, by reason. They never become order
+    // records: the refusal carries the order's ids but not its price or size.
+    private final long[] omsRejectsByReason = new long[RejectReason.values().length];
 
     private final HashMap<Long, InFlightOrder> inFlight = new HashMap<>();
 
@@ -499,6 +506,23 @@ public final class BacktestRecorder {
     // =========================================================================
     // Internal helpers
     // =========================================================================
+
+    /** Counts a refusal the OMS made itself, from risk or exchange-constraint checks. */
+    public void onOmsReject(OrderExecutionReport report) {
+        omsRejectsByReason[report.decoder.rejectReason().ordinal()]++;
+    }
+
+    /** OMS refusals so far, by reject reason name; reasons never seen are left out. */
+    public Map<String, Long> getOmsRejectCounts() {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        RejectReason[] reasons = RejectReason.values();
+        for (int i = 0; i < reasons.length; i++) {
+            if (omsRejectsByReason[i] > 0) {
+                counts.put(reasons[i].name(), omsRejectsByReason[i]);
+            }
+        }
+        return counts;
+    }
 
     /**
      * Writes a record for every order still working at {@code timestamp}, with status {@link #STATUS_OPEN}, so a

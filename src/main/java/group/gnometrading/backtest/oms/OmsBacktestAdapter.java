@@ -112,6 +112,12 @@ public final class OmsBacktestAdapter {
         if (published > 0 || intents.isEmpty()) {
             stepOms();
         }
+        if (recorder != null) {
+            // Everything the OMS sends the strategy while handling intents is its own refusal.
+            for (OrderExecutionReport reject : strategyExecReports) {
+                recorder.onOmsReject(reject);
+            }
+        }
         return messageBuffer;
     }
 

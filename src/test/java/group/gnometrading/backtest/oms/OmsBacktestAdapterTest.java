@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import group.gnometrading.SecurityMaster;
 import group.gnometrading.backtest.driver.LocalMessage;
 import group.gnometrading.backtest.driver.SimulatedClock;
+import group.gnometrading.backtest.recorder.BacktestRecorder;
 import group.gnometrading.logging.NullLogger;
 import group.gnometrading.oms.OrderManagementSystem;
 import group.gnometrading.oms.pnl.PriceSlotRegistry;
@@ -25,6 +26,7 @@ import group.gnometrading.sm.Security;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -96,6 +98,26 @@ class OmsBacktestAdapterTest {
         assertEquals(400, adapter.getStrategyExecReports().size());
         // Synthetic rejects carry the simulated time they were made at.
         assertEquals(1L, adapter.getStrategyExecReports().get(0).decoder.timestampRecv());
+    }
+
+    @Test
+    void omsRejectsAreCountedByReason() throws Exception {
+        when(securityMaster.getListingSpec(LISTING_ID)).thenReturn(new ListingSpec(LISTING_ID, 1, 0, 0, 1, 1_000_000));
+        BacktestRecorder recorder = new BacktestRecorder(1);
+        OrderManagementSystem oms = new OrderManagementSystem(
+                new NullLogger(),
+                new PooledOrderStateManager(64),
+                new DefaultPositionTracker(new SharedPositionBuffer(16)),
+                new RiskEngine(),
+                securityMaster,
+                new SharedPriceBuffer(1),
+                new PriceSlotRegistry(1),
+                clock);
+        OmsBacktestAdapter recording = new OmsBacktestAdapter(oms, clock, recorder);
+
+        recording.processIntents(1L, List.of(twoSidedIntent(100L, 110L, 10L)));
+
+        assertEquals(Map.of("INVALID_SIZE", 2L), recorder.getOmsRejectCounts());
     }
 
     @Test

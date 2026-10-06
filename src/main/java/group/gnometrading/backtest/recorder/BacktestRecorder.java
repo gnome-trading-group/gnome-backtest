@@ -154,7 +154,7 @@ public final class BacktestRecorder {
         long submitTimestamp;
         long ackTimestamp = 0;
         int exchangeId;
-        int securityId;
+        long securityId;
         int strategyId;
         byte side;
         byte orderType;
@@ -259,7 +259,7 @@ public final class BacktestRecorder {
         ordAckTs = ord.addLongColumn("ack_timestamp");
         ordTerminalTs = ord.addLongColumn("terminal_timestamp");
         ordExchangeId = ord.addIntColumn("exchange_id");
-        ordSecurityId = ord.addIntColumn("security_id");
+        ordSecurityId = ord.addLongColumn("security_id");
         ordStrategyId = ord.addIntColumn("strategy_id");
         ordClientOid = ord.addLongColumn("client_oid");
         ordSide = ord.addByteColumn("side");
@@ -281,7 +281,7 @@ public final class BacktestRecorder {
         RecordBuffer fil = new RecordBuffer("fills", INITIAL_FILL_CAPACITY);
         filTimestamp = fil.addLongColumn("timestamp");
         filExchangeId = fil.addIntColumn("exchange_id");
-        filSecurityId = fil.addIntColumn("security_id");
+        filSecurityId = fil.addLongColumn("security_id");
         filStrategyId = fil.addIntColumn("strategy_id");
         filClientOid = fil.addLongColumn("client_oid");
         filSide = fil.addByteColumn("side");
@@ -345,7 +345,7 @@ public final class BacktestRecorder {
         InFlightOrder ifo = new InFlightOrder();
         ifo.submitTimestamp = timestamp;
         ifo.exchangeId = order.decoder.exchangeId();
-        ifo.securityId = (int) order.decoder.securityId();
+        ifo.securityId = order.decoder.securityId();
         ifo.strategyId = order.getClientOidStrategyId();
         ifo.side = encodeSide(order.decoder.side());
         ifo.orderType = encodeOrderType(order.decoder.orderType().name());
@@ -571,7 +571,7 @@ public final class BacktestRecorder {
 
         fillRecords.setLong(idx, filTimestamp, timestamp);
         fillRecords.setInt(idx, filExchangeId, exchangeId);
-        fillRecords.setInt(idx, filSecurityId, (int) securityId);
+        fillRecords.setLong(idx, filSecurityId, securityId);
         fillRecords.setInt(idx, filStrategyId, strategyId);
         fillRecords.setLong(idx, filClientOid, clientOid);
         fillRecords.setByte(idx, filSide, encodeSide(side));
@@ -617,7 +617,7 @@ public final class BacktestRecorder {
         orderRecords.setLong(idx, ordAckTs, ifo.ackTimestamp);
         orderRecords.setLong(idx, ordTerminalTs, timestamp);
         orderRecords.setInt(idx, ordExchangeId, ifo.exchangeId);
-        orderRecords.setInt(idx, ordSecurityId, ifo.securityId);
+        orderRecords.setLong(idx, ordSecurityId, ifo.securityId);
         orderRecords.setInt(idx, ordStrategyId, ifo.strategyId);
         orderRecords.setLong(idx, ordClientOid, clientOid);
         orderRecords.setByte(idx, ordSide, ifo.side);

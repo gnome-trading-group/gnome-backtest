@@ -3,12 +3,14 @@ package group.gnometrading.backtest.config;
 import group.gnometrading.RegistryConnection;
 import group.gnometrading.SecurityMaster;
 import group.gnometrading.backtest.driver.BacktestDriver;
+import group.gnometrading.backtest.driver.MarketDataArrival;
 import group.gnometrading.backtest.driver.SimulatedClock;
 import group.gnometrading.backtest.oms.OmsBacktestAdapter;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
 import group.gnometrading.data.MarketDataEntry;
 import group.gnometrading.logging.ConsoleLogger;
 import group.gnometrading.oms.OrderManagementSystem;
+import group.gnometrading.oms.ledger.LedgerSink;
 import group.gnometrading.oms.pnl.PriceSlotRegistry;
 import group.gnometrading.oms.pnl.PriceWriterAgent;
 import group.gnometrading.oms.pnl.SharedPriceBuffer;
@@ -18,6 +20,9 @@ import group.gnometrading.oms.risk.PolicyFactory;
 import group.gnometrading.oms.risk.RiskEngine;
 import group.gnometrading.oms.state.PooledOrderStateManager;
 import group.gnometrading.schemas.IntentEncoder;
+import group.gnometrading.schemas.Mbp10Schema;
+import group.gnometrading.sequencer.GlobalSequence;
+import group.gnometrading.sequencer.SequencedRingBuffer;
 import group.gnometrading.simulation.config.ExchangeProfileConfig;
 import group.gnometrading.simulation.exchange.SimulatedExchange;
 import group.gnometrading.simulation.latency.LatencySeeds;
@@ -27,6 +32,7 @@ import group.gnometrading.strategies.StrategyAgent;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -61,11 +67,16 @@ public final class BacktestDriverFactory {
 
         List<ResolvedListing> resolved = resolveListings(config, securityMaster);
 
-        Map<Integer, Map<Integer, SimulatedExchange>> exchangeMap = buildExchangeMap(config, resolved);
+        Map<SimulatedExchange, MarketDataArrival> marketDataArrivals = new IdentityHashMap<>();
+        Map<Integer, Map<Integer, SimulatedExchange>> exchangeMap =
+                buildExchangeMap(config, resolved, marketDataArrivals);
         List<MarketDataEntry> entries = buildEntries(config, resolved);
         OmsBacktestAdapter adapter = new OmsBacktestAdapter(oms, context.clock(), recorder);
-        PriceWriterAgent priceWriter = new PriceWriterAgent(
-                context.priceBuffer(), context.priceRegistry(), securityMaster, strategy.getMarketDataBuffer());
+        // Its own feed rather than the strategy's buffer: live it reads market data as it arrives, even while the
+        // strategy is busy.
+        SequencedRingBuffer<Mbp10Schema> priceFeed = new SequencedRingBuffer<>(Mbp10Schema::new, new GlobalSequence());
+        PriceWriterAgent priceWriter =
+                new PriceWriterAgent(context.priceBuffer(), context.priceRegistry(), securityMaster, priceFeed);
 
         String stage = System.getenv("STAGE");
         if (stage == null || stage.isEmpty()) {
@@ -76,8 +87,10 @@ public final class BacktestDriverFactory {
                 entries,
                 strategy,
                 exchangeMap,
+                marketDataArrivals,
                 adapter,
                 priceWriter,
+                priceFeed,
                 s3Client,
                 bucket,
                 recorder,
@@ -125,6 +138,7 @@ public final class BacktestDriverFactory {
                 securityMaster,
                 context.priceBuffer(),
                 context.priceRegistry(),
+                LedgerSink.NONE,
                 context.clock());
     }
 
@@ -163,15 +177,23 @@ public final class BacktestDriverFactory {
         return result;
     }
 
+    /** Builds each listing's exchange, and records in {@code marketDataArrivals} when its market data reaches us. */
     private static Map<Integer, Map<Integer, SimulatedExchange>> buildExchangeMap(
-            BacktestConfig config, List<ResolvedListing> resolved) {
+            BacktestConfig config,
+            List<ResolvedListing> resolved,
+            Map<SimulatedExchange, MarketDataArrival> marketDataArrivals) {
         Map<Integer, Map<Integer, SimulatedExchange>> map = new HashMap<>();
         for (ResolvedListing rl : resolved) {
             int exchangeId = rl.listing.exchange().exchangeId();
             int securityId = rl.listing.security().securityId();
             long listingSeed = LatencySeeds.derive(config.seed, rl.listing.listingId());
-            map.computeIfAbsent(exchangeId, k -> new HashMap<>())
-                    .put(securityId, rl.profile.toSimulatedExchange(listingSeed));
+            SimulatedExchange exchange = rl.profile.toSimulatedExchange(listingSeed);
+            map.computeIfAbsent(exchangeId, k -> new HashMap<>()).put(securityId, exchange);
+            marketDataArrivals.put(
+                    exchange,
+                    MarketDataArrival.of(
+                            rl.profile.marketDataLatency,
+                            LatencySeeds.derive(listingSeed, LatencySeeds.MARKET_DATA_STREAM)));
         }
         return map;
     }

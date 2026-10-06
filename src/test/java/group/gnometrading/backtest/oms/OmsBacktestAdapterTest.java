@@ -11,6 +11,7 @@ import group.gnometrading.backtest.driver.SimulatedClock;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
 import group.gnometrading.logging.NullLogger;
 import group.gnometrading.oms.OrderManagementSystem;
+import group.gnometrading.oms.ledger.LedgerSink;
 import group.gnometrading.oms.pnl.PriceSlotRegistry;
 import group.gnometrading.oms.pnl.SharedPriceBuffer;
 import group.gnometrading.oms.position.DefaultPositionTracker;
@@ -60,6 +61,7 @@ class OmsBacktestAdapterTest {
                 securityMaster,
                 new SharedPriceBuffer(1),
                 new PriceSlotRegistry(1),
+                LedgerSink.NONE,
                 clock);
         adapter = new OmsBacktestAdapter(oms, clock);
 
@@ -112,6 +114,7 @@ class OmsBacktestAdapterTest {
                 securityMaster,
                 new SharedPriceBuffer(1),
                 new PriceSlotRegistry(1),
+                LedgerSink.NONE,
                 clock);
         OmsBacktestAdapter recording = new OmsBacktestAdapter(oms, clock, recorder);
 
@@ -130,6 +133,7 @@ class OmsBacktestAdapterTest {
                 securityMaster,
                 new SharedPriceBuffer(1),
                 new PriceSlotRegistry(1),
+                LedgerSink.NONE,
                 clock);
         OmsBacktestAdapter wide = new OmsBacktestAdapter(oms, clock);
         List<Intent> intents = new ArrayList<>();

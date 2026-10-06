@@ -10,7 +10,9 @@ public enum EventType {
     /** When the local strategy processes a market update. */
     LOCAL_MARKET_DATA(3),
     /** Messages from the strategy arriving at the exchange (orders, cancels, modifies). */
-    LOCAL_MESSAGE(4);
+    LOCAL_MESSAGE(4),
+    /** When the strategy finishes processing an event: its intents reach the OMS and it can take the next one. */
+    STRATEGY_DONE(5);
 
     public final int value;
 

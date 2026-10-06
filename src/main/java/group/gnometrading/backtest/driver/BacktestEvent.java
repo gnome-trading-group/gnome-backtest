@@ -17,6 +17,7 @@ public record BacktestEvent(long timestamp, EventType eventType, long sequence, 
             return cmp;
         }
         // Secondary: EXCHANGE_MARKET_DATA < EXCHANGE_PROCESS < EXCHANGE_MESSAGE < LOCAL_MARKET_DATA < LOCAL_MESSAGE
+        // < STRATEGY_DONE
         cmp = Integer.compare(this.eventType.value, other.eventType.value);
         if (cmp != 0) {
             return cmp;

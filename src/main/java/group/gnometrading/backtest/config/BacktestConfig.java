@@ -22,6 +22,12 @@ public class BacktestConfig {
     public List<ListingSimConfig> listings;
     public Map<String, ExchangeProfileConfig> profiles;
     public StrategyConfig strategy;
+    /**
+     * The strategy id the run trades as, which scopes its positions and risk policies as {@code strategy.id} does
+     * live. 0 when the run stands for no particular strategy; {@code risk.from_registry} needs a real one.
+     */
+    public int strategyId = 0;
+
     public RiskConfig risk = new RiskConfig();
     public boolean record = true;
     public int recordDepth = 1;

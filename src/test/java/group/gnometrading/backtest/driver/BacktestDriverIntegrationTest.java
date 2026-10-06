@@ -55,7 +55,7 @@ class BacktestDriverIntegrationTest {
         config.profiles = Map.of("default", new ExchangeProfileConfig());
 
         BacktestContext context = BacktestDriverFactory.buildContext(config);
-        OrderManagementSystem oms = BacktestDriverFactory.buildOms(config.risk, securityMaster, context);
+        OrderManagementSystem oms = BacktestDriverFactory.buildOms(config, securityMaster, null, context);
         PositionView positionView = oms.getPositionTracker().createPositionView(0);
 
         MomentumCallback callback = new MomentumCallback();
@@ -96,7 +96,7 @@ class BacktestDriverIntegrationTest {
         config.profiles = Map.of("default", new ExchangeProfileConfig());
 
         BacktestContext context = BacktestDriverFactory.buildContext(config);
-        OrderManagementSystem oms = BacktestDriverFactory.buildOms(config.risk, securityMaster, context);
+        OrderManagementSystem oms = BacktestDriverFactory.buildOms(config, securityMaster, null, context);
         PositionView positionView = oms.getPositionTracker().createPositionView(0);
 
         SpammingMarketMakerCallback callback = new SpammingMarketMakerCallback();

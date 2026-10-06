@@ -1,7 +1,6 @@
 package group.gnometrading.backtest.config;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import group.gnometrading.RegistryConnection;
 import group.gnometrading.SecurityMaster;
 import group.gnometrading.backtest.driver.BacktestDriver;
 import group.gnometrading.backtest.driver.SimulatedClock;
@@ -15,20 +14,16 @@ import group.gnometrading.oms.pnl.PriceWriterAgent;
 import group.gnometrading.oms.pnl.SharedPriceBuffer;
 import group.gnometrading.oms.position.DefaultPositionTracker;
 import group.gnometrading.oms.position.SharedPositionBuffer;
-import group.gnometrading.oms.risk.Configurable;
-import group.gnometrading.oms.risk.MarketRiskPolicy;
-import group.gnometrading.oms.risk.OrderRiskPolicy;
 import group.gnometrading.oms.risk.PolicyFactory;
 import group.gnometrading.oms.risk.RiskEngine;
-import group.gnometrading.oms.risk.RiskPolicyType;
 import group.gnometrading.oms.state.PooledOrderStateManager;
+import group.gnometrading.schemas.IntentEncoder;
 import group.gnometrading.simulation.config.ExchangeProfileConfig;
 import group.gnometrading.simulation.exchange.SimulatedExchange;
 import group.gnometrading.simulation.latency.LatencySeeds;
 import group.gnometrading.sm.Listing;
 import group.gnometrading.sm.ListingSpec;
 import group.gnometrading.strategies.StrategyAgent;
-import group.gnometrading.strings.ViewString;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -110,10 +105,17 @@ public final class BacktestDriverFactory {
      * <p>Each entry in {@code risk.policies} is keyed by a {@link RiskPolicyType} name and mapped
      * to a parameter map. Order-time and market-time policies are split and loaded into the
      * global groups via {@link RiskEngine#withPolicies}.
+     *
+     * <p>The OMS the strategy trades through, under the config's risk policies. {@code registry} is only read when
+     * {@code risk.from_registry} is set, and may be null otherwise.
      */
     public static OrderManagementSystem buildOms(
-            RiskConfig risk, SecurityMaster securityMaster, BacktestContext context) {
-        RiskEngine engine = buildRiskEngine(risk, context);
+            BacktestConfig config,
+            SecurityMaster securityMaster,
+            RegistryConnection registry,
+            BacktestContext context) {
+        validateStrategyId(config.strategyId);
+        RiskEngine engine = buildRiskEngine(config, registry, context);
         SharedPositionBuffer sharedBuffer = new SharedPositionBuffer(64);
         return new OrderManagementSystem(
                 new ConsoleLogger(context.clock()),
@@ -126,39 +128,18 @@ public final class BacktestDriverFactory {
                 context.clock());
     }
 
-    private static RiskEngine buildRiskEngine(RiskConfig risk, BacktestContext context) {
-        if (risk == null || risk.policies.isEmpty()) {
-            return new RiskEngine();
+    private static void validateStrategyId(int strategyId) {
+        if (strategyId < 0 || strategyId > IntentEncoder.strategyIdMaxValue()) {
+            throw new IllegalArgumentException("strategy_id must be between 0 and " + IntentEncoder.strategyIdMaxValue()
+                    + ", the range an intent carries, got " + strategyId);
         }
+    }
 
+    private static RiskEngine buildRiskEngine(
+            BacktestConfig config, RegistryConnection registry, BacktestContext context) {
         final PolicyFactory factory = new PolicyFactory(context.priceBuffer(), context.priceRegistry());
-        final ObjectMapper mapper = new ObjectMapper();
-        final List<OrderRiskPolicy> orderPolicies = new ArrayList<>();
-        final List<MarketRiskPolicy> marketPolicies = new ArrayList<>();
-
-        for (Map.Entry<String, Map<String, Object>> entry : risk.policies.entrySet()) {
-            final RiskPolicyType type = RiskPolicyType.valueOf(entry.getKey());
-            if (type.category() == RiskPolicyType.Category.KILL) {
-                throw new IllegalArgumentException(
-                        type + " stops all trading and has no meaning in a backtest; remove it from risk.policies");
-            }
-            final Map<String, Object> params = entry.getValue() != null ? entry.getValue() : Map.of();
-            // Backtest policies name no listing, so limits that add up across listings judge the strategy's total.
-            final Configurable policy = factory.create(type, true);
-            try {
-                policy.reconfigure(new ViewString(mapper.writeValueAsString(params)));
-            } catch (JsonProcessingException e) {
-                throw new IllegalArgumentException("Failed to serialize params for policy " + type, e);
-            }
-            switch (type.category()) {
-                case ORDER -> orderPolicies.add((OrderRiskPolicy) policy);
-                case MARKET -> marketPolicies.add((MarketRiskPolicy) policy);
-                case KILL -> throw new IllegalStateException("unreachable: kill switches are rejected above");
-            }
-        }
-
-        return RiskEngine.withPolicies(
-                orderPolicies.toArray(new OrderRiskPolicy[0]), marketPolicies.toArray(new MarketRiskPolicy[0]));
+        return RiskEngine.withScopedPolicies(
+                BacktestRiskPolicies.load(config.risk, config.strategyId, registry, factory));
     }
 
     private static List<ResolvedListing> resolveListings(BacktestConfig config, SecurityMaster securityMaster) {

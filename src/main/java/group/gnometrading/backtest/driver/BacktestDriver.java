@@ -1,6 +1,5 @@
 package group.gnometrading.backtest.driver;
 
-import group.gnometrading.backtest.bridge.BytesSchemaFactory;
 import group.gnometrading.backtest.oms.OmsBacktestAdapter;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
 import group.gnometrading.backtest.recorder.MetricAware;
@@ -11,12 +10,10 @@ import group.gnometrading.schemas.IntentDecoder;
 import group.gnometrading.schemas.MessageHeaderDecoder;
 import group.gnometrading.schemas.OrderExecutionReport;
 import group.gnometrading.schemas.Schema;
-import group.gnometrading.sequencer.JournalReader;
 import group.gnometrading.sequencer.SequencedPoller;
 import group.gnometrading.sequencer.SequencedRingBuffer;
 import group.gnometrading.simulation.exchange.SimulatedExchange;
 import group.gnometrading.strategies.StrategyAgent;
-import java.io.IOException;
 import java.nio.ByteOrder;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -230,24 +227,6 @@ public final class BacktestDriver {
             return;
         }
         enqueue(exchangeTs, EventType.EXCHANGE_MARKET_DATA, schema);
-    }
-
-    /**
-     * Loads market data from a production journal into the priority queue, one EXCHANGE_MARKET_DATA event per
-     * record; see {@link #prepareData()}.
-     */
-    public void prepareDataFromJournal(JournalReader reader) throws IOException {
-        queue = new PriorityQueue<>();
-        reader.readAll((globalSequence, templateId, buffer, length) -> {
-            byte[] bytes = new byte[length];
-            buffer.getBytes(0, bytes);
-            enqueueRecord(BytesSchemaFactory.fromBytes(bytes));
-        });
-        if (droppedNullTimestamp > 0) {
-            logger.warning(String.format(
-                    "prepareDataFromJournal: dropped %d record(s) with null event timestamp", droppedNullTimestamp));
-        }
-        ready = true;
     }
 
     public int getEventsProcessed() {

@@ -16,7 +16,9 @@ import group.gnometrading.oms.pnl.PriceWriterAgent;
 import group.gnometrading.oms.pnl.SharedPriceBuffer;
 import group.gnometrading.oms.position.DefaultPositionTracker;
 import group.gnometrading.oms.position.SharedPositionBuffer;
+import group.gnometrading.oms.risk.ListingDirectory;
 import group.gnometrading.oms.risk.PolicyFactory;
+import group.gnometrading.oms.risk.RejectStreaks;
 import group.gnometrading.oms.risk.RiskEngine;
 import group.gnometrading.oms.state.PooledOrderStateManager;
 import group.gnometrading.schemas.IntentEncoder;
@@ -128,7 +130,7 @@ public final class BacktestDriverFactory {
             RegistryConnection registry,
             BacktestContext context) {
         validateStrategyId(config.strategyId);
-        RiskEngine engine = buildRiskEngine(config, registry, context);
+        RiskEngine engine = buildRiskEngine(config, securityMaster, registry, context);
         SharedPositionBuffer sharedBuffer = new SharedPositionBuffer(64);
         return new OrderManagementSystem(
                 new ConsoleLogger(context.clock()),
@@ -150,10 +152,25 @@ public final class BacktestDriverFactory {
     }
 
     private static RiskEngine buildRiskEngine(
-            BacktestConfig config, RegistryConnection registry, BacktestContext context) {
-        final PolicyFactory factory = new PolicyFactory(context.priceBuffer(), context.priceRegistry());
+            BacktestConfig config,
+            SecurityMaster securityMaster,
+            RegistryConnection registry,
+            BacktestContext context) {
+        // Policies scoped to an exchange, or judging $1-payout contracts, need to know each listing's venue and kind.
+        final List<Listing> listings = new ArrayList<>();
+        for (ListingSimConfig lsc : config.listings) {
+            final Listing listing = securityMaster.getListing(lsc.listingId);
+            if (listing == null) {
+                throw new IllegalArgumentException("Listing not found: " + lsc.listingId);
+            }
+            listings.add(listing);
+        }
+        final ListingDirectory directory = new ListingDirectory(listings);
+        final RejectStreaks streaks = new RejectStreaks();
+        final PolicyFactory factory =
+                new PolicyFactory(context.priceBuffer(), context.priceRegistry(), directory, streaks);
         return RiskEngine.withScopedPolicies(
-                BacktestRiskPolicies.load(config.risk, config.strategyId, registry, factory));
+                BacktestRiskPolicies.load(config.risk, config.strategyId, registry, factory), directory, streaks);
     }
 
     private static List<ResolvedListing> resolveListings(BacktestConfig config, SecurityMaster securityMaster) {

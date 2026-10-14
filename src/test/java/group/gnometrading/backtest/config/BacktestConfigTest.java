@@ -20,9 +20,9 @@ class BacktestConfigTest {
                 risk:
                   from_registry: true
                   policies:
-                    - type: MAX_NOTIONAL
+                    - type: MAX_ORDER_NOTIONAL
                       params:
-                        maxNotionalValue: 1000
+                        maxOrderNotional: 1000
                     - type: MAX_OPEN_ORDERS
                       strategy_id: 12
                       listing_id: 7122
@@ -36,7 +36,7 @@ class BacktestConfigTest {
         assertTrue(config.risk.fromRegistry);
         assertEquals(2, config.risk.policies.size());
         RiskConfig.PolicyConfig global = config.risk.policies.get(0);
-        assertEquals("MAX_NOTIONAL", global.type);
+        assertEquals("MAX_ORDER_NOTIONAL", global.type);
         assertEquals(0, global.strategyId);
         assertEquals(0, global.listingId);
         RiskConfig.PolicyConfig scoped = config.risk.policies.get(1);

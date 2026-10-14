@@ -69,7 +69,8 @@ final class BacktestRiskPolicies {
                         "Registry risk policy " + record.policyId + " has unknown type " + record.policyType);
             }
             if (type.category() != RiskPolicyType.Category.KILL) {
-                policies.add(build(type, record.strategyId, record.listingId, record.parametersJson, factory));
+                policies.add(build(
+                        type, record.strategyId, record.listingId, record.exchangeId, record.parametersJson, factory));
             }
         }
     }
@@ -91,22 +92,23 @@ final class BacktestRiskPolicies {
         } catch (JsonProcessingException e) {
             throw new IllegalArgumentException("Failed to serialize params for policy " + type, e);
         }
-        return build(type, config.strategyId, config.listingId, new ViewString(json), factory);
+        return build(type, config.strategyId, config.listingId, config.exchangeId, new ViewString(json), factory);
     }
 
     private static ScopedPolicy build(
             final RiskPolicyType type,
             final int strategyId,
             final int listingId,
+            final int exchangeId,
             final GnomeString params,
             final PolicyFactory factory) {
-        // As in production: a policy with no listing judges the total across listings.
-        final Configurable policy = factory.create(type, listingId == 0);
+        // As in production: a policy with no listing judges the total across listings, on its exchange if it names one.
+        final Configurable policy = factory.create(type, listingId, exchangeId);
         try {
             policy.reconfigure(params);
         } catch (RuntimeException e) {
             throw new IllegalArgumentException("Risk policy " + type + " can't read its parameters " + params, e);
         }
-        return new ScopedPolicy(strategyId, listingId, policy);
+        return new ScopedPolicy(strategyId, listingId, exchangeId, policy);
     }
 }

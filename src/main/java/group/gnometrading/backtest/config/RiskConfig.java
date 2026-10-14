@@ -29,6 +29,9 @@ public class RiskConfig {
      *   listing_id: 7122
      *   params:
      *     maxOpenOrders: 3
+     * - type: MARKET_ORDER_SLIPPAGE
+     *   params:
+     *     maxSlippage: 20000000               # market orders fill up to 2¢ past the touch, as live
      * </pre>
      */
     public List<PolicyConfig> policies = new ArrayList<>();

@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import group.gnometrading.simulation.config.ExchangeProfileConfig;
+import group.gnometrading.simulation.config.SimulationOverrides;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
@@ -20,7 +20,18 @@ public class BacktestConfig {
     public LocalDateTime startDate;
     public LocalDateTime endDate;
     public List<ListingSimConfig> listings;
-    public Map<String, ExchangeProfileConfig> profiles;
+    /**
+     * Blocks every listing on an exchange (by its code, e.g. KALSHI) simulates with in place of the exchange's
+     * registry parameters. Empty means every listing simulates as its exchange is recorded.
+     */
+    public Map<String, SimulationOverrides> exchanges = Map.of();
+    /**
+     * The time the run reads the registry's simulation parameters and fee schedules as known at (ISO-8601), so a rerun
+     * with the same time simulates identically. Null means when the run starts; the factory then sets it here, so
+     * the caller can record it.
+     */
+    public String simulationAsOf;
+
     public StrategyConfig strategy;
     /**
      * The strategy id the run trades as, which scopes its positions and risk policies as {@code strategy.id} does

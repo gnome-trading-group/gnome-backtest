@@ -4,7 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -18,10 +21,14 @@ import group.gnometrading.schemas.IntentDecoder;
 import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.Statics;
+import group.gnometrading.simulation.config.LatencyConfig;
+import group.gnometrading.simulation.config.QueueModelConfig;
+import group.gnometrading.simulation.config.SimulationOverrides;
 import group.gnometrading.sm.Exchange;
 import group.gnometrading.sm.Listing;
 import group.gnometrading.sm.ListingSpec;
 import group.gnometrading.sm.Security;
+import group.gnometrading.sm.SimulationParameters;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -68,6 +75,62 @@ class BacktestDriverFactoryTest {
         when(securityMaster.getListing(EXCHANGE_ID, SECURITY_ID)).thenReturn(listing);
         when(securityMaster.getListing(LISTING_ID)).thenReturn(listing);
         when(securityMaster.getListingSpec(LISTING_ID)).thenReturn(new ListingSpec(LISTING_ID, 1, 0, DOLLAR, 1, 0));
+        when(securityMaster.getSimulationParameters(eq(EXCHANGE_ID), anyString()))
+                .thenReturn(new SimulationParameters(1, EXCHANGE_ID, "1970-01-01T00:00:00.000Z", RECORDED));
+    }
+
+    private static final String RECORDED =
+            """
+            {"network_latency": {"type": "static", "latency_nanos": 50000000},
+             "order_processing_latency": {"type": "static", "latency_nanos": 5000000},
+             "market_data_latency": {"type": "recorded", "fallback": {"type": "static", "latency_nanos": 50000000}},
+             "queue_model": {"type": "risk_averse"},
+             "self_trade_prevention": "CANCEL_INCOMING"}""";
+
+    @Test
+    void listingsSimulateWithTheirExchangesRecordedParametersUnderTheRunsOverrides() {
+        SimulationOverrides exchange = new SimulationOverrides();
+        exchange.queueModel = new QueueModelConfig.Optimistic();
+        config.exchanges = Map.of("POLYMARKET_INTL", exchange);
+        when(securityMaster.getExchange("POLYMARKET_INTL"))
+                .thenReturn(new Exchange(EXCHANGE_ID, "POLYMARKET_INTL", "Test", "US", null));
+        SimulationOverrides listing = new SimulationOverrides();
+        listing.networkLatency = new LatencyConfig.Static();
+        config.listings.get(0).overrides = listing;
+
+        String resolved =
+                BacktestDriverFactory.resolvedSimulation(config, securityMaster).get(LISTING_ID);
+
+        assertTrue(resolved.contains("\"queue_model\":{\"type\":\"optimistic\"}"), resolved);
+        assertTrue(resolved.contains("\"network_latency\":{\"type\":\"static\",\"latency_nanos\":0}"), resolved);
+        assertTrue(
+                resolved.contains("\"order_processing_latency\":{\"type\":\"static\",\"latency_nanos\":5000000}"),
+                resolved);
+        assertTrue(resolved.contains("\"fee_model\":{\"type\":\"registry\"}"), resolved);
+    }
+
+    @Test
+    void theRunPinsTheTimeItReadTheRegistryAt() {
+        BacktestDriverFactory.resolvedSimulation(config, securityMaster);
+        String pinned = config.simulationAsOf;
+        assertDoesNotThrow(() -> java.time.Instant.parse(pinned));
+        BacktestDriverFactory.resolvedSimulation(config, securityMaster);
+        assertEquals(pinned, config.simulationAsOf);
+    }
+
+    @Test
+    void anOverrideForAnUnknownExchangeIsRefused() {
+        config.exchanges = Map.of("POLYMARKET", new SimulationOverrides());
+        IllegalArgumentException refused = assertThrows(
+                IllegalArgumentException.class, () -> BacktestDriverFactory.resolvedSimulation(config, securityMaster));
+        assertEquals("exchanges overrides name unknown exchanges [POLYMARKET]", refused.getMessage());
+    }
+
+    @Test
+    void anOverrideForARealExchangeTheRunDoesNotTradeIsLeftAlone() {
+        when(securityMaster.getExchange("KALSHI")).thenReturn(new Exchange(9, "KALSHI", "Kalshi", "us-east-1", null));
+        config.exchanges = Map.of("KALSHI", new SimulationOverrides());
+        assertDoesNotThrow(() -> BacktestDriverFactory.resolvedSimulation(config, securityMaster));
     }
 
     @Test

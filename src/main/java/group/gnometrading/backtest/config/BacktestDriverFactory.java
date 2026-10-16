@@ -25,18 +25,23 @@ import group.gnometrading.schemas.IntentEncoder;
 import group.gnometrading.schemas.Mbp10Schema;
 import group.gnometrading.sequencer.GlobalSequence;
 import group.gnometrading.sequencer.SequencedRingBuffer;
-import group.gnometrading.simulation.config.ExchangeProfileConfig;
+import group.gnometrading.simulation.config.ExchangeSimulationConfig;
+import group.gnometrading.simulation.config.SimulationResolver;
 import group.gnometrading.simulation.exchange.SimulatedExchange;
 import group.gnometrading.simulation.latency.LatencySeeds;
 import group.gnometrading.sm.Listing;
 import group.gnometrading.sm.ListingSpec;
 import group.gnometrading.strategies.StrategyAgent;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import software.amazon.awssdk.services.s3.S3Client;
 
 public final class BacktestDriverFactory {
@@ -173,8 +178,27 @@ public final class BacktestDriverFactory {
                 BacktestRiskPolicies.load(config.risk, config.strategyId, registry, factory), directory, streaks);
     }
 
+    /**
+     * Resolves each listing's simulation: its exchange's registry parameters at the run's pinned time, then the
+     * config's overrides for the exchange, then the listing's own.
+     */
     private static List<ResolvedListing> resolveListings(BacktestConfig config, SecurityMaster securityMaster) {
+        if (config.simulationAsOf == null) {
+            config.simulationAsOf = Instant.now().toString();
+        }
+        SimulationResolver resolver = new SimulationResolver(securityMaster, config.simulationAsOf);
         List<ResolvedListing> result = new ArrayList<>();
+        // A misspelt code would otherwise leave its exchange simulating with the registry's parameters, silently. A
+        // real exchange the run doesn't trade is fine: one config's overrides serve every scenario run from it.
+        Set<String> unknown = new TreeSet<>();
+        for (String code : config.exchanges.keySet()) {
+            if (securityMaster.getExchange(code) == null) {
+                unknown.add(code);
+            }
+        }
+        if (!unknown.isEmpty()) {
+            throw new IllegalArgumentException("exchanges overrides name unknown exchanges " + unknown);
+        }
         for (ListingSimConfig lsc : config.listings) {
             Listing listing = securityMaster.getListing(lsc.listingId);
             if (listing == null) {
@@ -184,12 +208,18 @@ public final class BacktestDriverFactory {
             if (spec == null) {
                 throw new IllegalArgumentException("Listing spec not found for listing: " + lsc.listingId);
             }
-            ExchangeProfileConfig profile = config.profiles.get(lsc.profile);
-            if (profile == null) {
-                throw new IllegalArgumentException(
-                        "Profile '" + lsc.profile + "' not found for listing " + lsc.listingId);
-            }
-            result.add(new ResolvedListing(listing, profile));
+            ExchangeSimulationConfig simulation = resolver.resolve(
+                    listing, true, config.exchanges.get(listing.exchange().exchangeCode()), lsc.overrides);
+            result.add(new ResolvedListing(listing, simulation));
+        }
+        return result;
+    }
+
+    /** Each listing's resolved simulation, as {@code listingId -> JSON}, for the run's metadata. */
+    public static Map<Integer, String> resolvedSimulation(BacktestConfig config, SecurityMaster securityMaster) {
+        Map<Integer, String> result = new LinkedHashMap<>();
+        for (ResolvedListing rl : resolveListings(config, securityMaster)) {
+            result.put(rl.listing.listingId(), rl.simulation.toJson());
         }
         return result;
     }
@@ -205,13 +235,15 @@ public final class BacktestDriverFactory {
             int exchangeId = rl.listing.exchange().exchangeId();
             int securityId = rl.listing.security().securityId();
             long listingSeed = LatencySeeds.derive(config.seed, rl.listing.listingId());
-            SimulatedExchange exchange =
-                    rl.profile.toSimulatedExchange(rl.listing.listingId(), listingSeed, securityMaster::getFeeTimeline);
+            SimulatedExchange exchange = rl.simulation.toSimulatedExchange(
+                    rl.listing.listingId(),
+                    listingSeed,
+                    new SimulationResolver(securityMaster, config.simulationAsOf).registryFees());
             map.computeIfAbsent(exchangeId, k -> new HashMap<>()).put(securityId, exchange);
             marketDataArrivals.put(
                     exchange,
                     MarketDataArrival.of(
-                            rl.profile.marketDataLatency,
+                            rl.simulation.marketDataLatency(),
                             LatencySeeds.derive(listingSeed, LatencySeeds.MARKET_DATA_STREAM)));
         }
         return map;
@@ -233,5 +265,5 @@ public final class BacktestDriverFactory {
         return entries;
     }
 
-    private record ResolvedListing(Listing listing, ExchangeProfileConfig profile) {}
+    private record ResolvedListing(Listing listing, ExchangeSimulationConfig simulation) {}
 }

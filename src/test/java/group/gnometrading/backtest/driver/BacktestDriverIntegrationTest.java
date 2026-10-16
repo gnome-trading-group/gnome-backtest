@@ -21,11 +21,9 @@ import group.gnometrading.schemas.OrderExecutionReport;
 import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Schema;
 import group.gnometrading.schemas.Side;
-import group.gnometrading.simulation.config.ExchangeProfileConfig;
 import group.gnometrading.strategies.PythonStrategyAgent;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.services.s3.S3Client;
 
@@ -50,9 +48,7 @@ class BacktestDriverIntegrationTest {
 
         ListingSimConfig lsc = new ListingSimConfig();
         lsc.listingId = LISTING_ID;
-        lsc.profile = "default";
         config.listings = List.of(lsc);
-        config.profiles = Map.of("default", new ExchangeProfileConfig());
 
         BacktestContext context = BacktestDriverFactory.buildContext(config);
         OrderManagementSystem oms = BacktestDriverFactory.buildOms(config, securityMaster, null, context);
@@ -91,9 +87,7 @@ class BacktestDriverIntegrationTest {
 
         ListingSimConfig lsc = new ListingSimConfig();
         lsc.listingId = LISTING_ID;
-        lsc.profile = "default";
         config.listings = List.of(lsc);
-        config.profiles = Map.of("default", new ExchangeProfileConfig());
 
         BacktestContext context = BacktestDriverFactory.buildContext(config);
         OrderManagementSystem oms = BacktestDriverFactory.buildOms(config, securityMaster, null, context);

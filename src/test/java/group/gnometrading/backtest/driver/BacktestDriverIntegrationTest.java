@@ -166,7 +166,8 @@ class BacktestDriverIntegrationTest {
         @Override
         public void onInit(
                 group.gnometrading.oms.position.PositionView positionView,
-                group.gnometrading.SecurityMaster securityMaster) {}
+                group.gnometrading.SecurityMaster securityMaster,
+                group.gnometrading.strategies.StrategyControl control) {}
 
         private static Intent buildTakeIntent(Mbp10Schema schema, Side takeSide) {
             Intent intent = new Intent();
@@ -231,7 +232,8 @@ class BacktestDriverIntegrationTest {
         @Override
         public void onInit(
                 group.gnometrading.oms.position.PositionView positionView,
-                group.gnometrading.SecurityMaster securityMaster) {}
+                group.gnometrading.SecurityMaster securityMaster,
+                group.gnometrading.strategies.StrategyControl control) {}
 
         private static Intent buildQuoteIntent(Mbp10Schema schema, long bidPx, long askPx) {
             Intent intent = new Intent();

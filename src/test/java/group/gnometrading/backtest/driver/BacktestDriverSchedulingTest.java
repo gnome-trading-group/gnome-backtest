@@ -47,6 +47,7 @@ import group.gnometrading.sm.Listing;
 import group.gnometrading.sm.ListingSpec;
 import group.gnometrading.sm.Security;
 import group.gnometrading.strategies.PythonStrategyAgent;
+import group.gnometrading.strategies.StrategyControl;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -425,7 +426,7 @@ class BacktestDriverSchedulingTest {
         }
 
         @Override
-        public void onInit(PositionView positionView, SecurityMaster securityMaster) {}
+        public void onInit(PositionView positionView, SecurityMaster securityMaster, StrategyControl control) {}
     }
 
     /** The real exchange, noting what reaches it and when, and how much it fills. */

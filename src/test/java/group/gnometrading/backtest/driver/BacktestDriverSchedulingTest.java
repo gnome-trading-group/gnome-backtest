@@ -2,6 +2,8 @@ package group.gnometrading.backtest.driver;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -35,6 +37,7 @@ import group.gnometrading.schemas.Statics;
 import group.gnometrading.sequencer.GlobalSequence;
 import group.gnometrading.sequencer.SequencedRingBuffer;
 import group.gnometrading.simulation.config.ExchangeProfileConfig;
+import group.gnometrading.simulation.config.FeeModelConfig;
 import group.gnometrading.simulation.config.LatencyConfig;
 import group.gnometrading.simulation.exchange.SimulatedExchange;
 import group.gnometrading.sm.Exchange;
@@ -520,9 +523,11 @@ class BacktestDriverSchedulingTest {
                     "SYM");
             when(securityMaster.getListing(EXCHANGE_ID, SECURITY_ID)).thenReturn(listing);
             when(securityMaster.getListing(LISTING_ID)).thenReturn(listing);
-            when(securityMaster.getListingSpec(LISTING_ID)).thenReturn(new ListingSpec(LISTING_ID, 1, 0, 0, 1, 0));
+            when(securityMaster.getListingSpec(eq(LISTING_ID), anyLong()))
+                    .thenReturn(new ListingSpec(LISTING_ID, 1, 0, 0, 1, 0));
 
             ExchangeProfileConfig profile = new ExchangeProfileConfig();
+            profile.feeModel = new FeeModelConfig.Static();
             profile.marketDataLatency = marketData;
             profile.networkLatency = network;
             ListingSimConfig listingConfig = new ListingSimConfig();
@@ -536,7 +541,8 @@ class BacktestDriverSchedulingTest {
             BacktestContext context = BacktestDriverFactory.buildContext(config);
             OrderManagementSystem oms = BacktestDriverFactory.buildOms(config, securityMaster, null, context);
             this.marketData = marketData;
-            exchange = new RecordingExchange(profile.toSimulatedExchange(7));
+            exchange = new RecordingExchange(
+                    profile.toSimulatedExchange(listingConfig.listingId, 7, securityMaster::getFeeTimeline));
             priceFeed = new SequencedRingBuffer<>(Mbp10Schema::new, new GlobalSequence());
             strategy = PythonStrategyAgent.create(
                     0, oms.getPositionTracker().createPositionView(0), securityMaster, callback);

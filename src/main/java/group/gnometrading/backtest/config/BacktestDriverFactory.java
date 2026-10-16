@@ -71,7 +71,7 @@ public final class BacktestDriverFactory {
 
         Map<SimulatedExchange, MarketDataArrival> marketDataArrivals = new IdentityHashMap<>();
         Map<Integer, Map<Integer, SimulatedExchange>> exchangeMap =
-                buildExchangeMap(config, resolved, marketDataArrivals);
+                buildExchangeMap(config, resolved, securityMaster, marketDataArrivals);
         List<MarketDataEntry> entries = buildEntries(config, resolved);
         OmsBacktestAdapter adapter = new OmsBacktestAdapter(oms, context.clock(), recorder);
         // Its own feed rather than the strategy's buffer: live it reads market data as it arrives, even while the
@@ -198,13 +198,15 @@ public final class BacktestDriverFactory {
     private static Map<Integer, Map<Integer, SimulatedExchange>> buildExchangeMap(
             BacktestConfig config,
             List<ResolvedListing> resolved,
+            SecurityMaster securityMaster,
             Map<SimulatedExchange, MarketDataArrival> marketDataArrivals) {
         Map<Integer, Map<Integer, SimulatedExchange>> map = new HashMap<>();
         for (ResolvedListing rl : resolved) {
             int exchangeId = rl.listing.exchange().exchangeId();
             int securityId = rl.listing.security().securityId();
             long listingSeed = LatencySeeds.derive(config.seed, rl.listing.listingId());
-            SimulatedExchange exchange = rl.profile.toSimulatedExchange(listingSeed);
+            SimulatedExchange exchange =
+                    rl.profile.toSimulatedExchange(rl.listing.listingId(), listingSeed, securityMaster::getFeeTimeline);
             map.computeIfAbsent(exchangeId, k -> new HashMap<>()).put(securityId, exchange);
             marketDataArrivals.put(
                     exchange,

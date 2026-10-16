@@ -3,6 +3,8 @@ package group.gnometrading.backtest.oms;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 import group.gnometrading.SecurityMaster;
@@ -89,7 +91,8 @@ class OmsBacktestAdapterTest {
     @Test
     void manyRejectedIntentsInOneStepDoNotHang() {
         // Every order is below the minimum size, so each two-sided intent yields two synthetic rejects.
-        when(securityMaster.getListingSpec(LISTING_ID)).thenReturn(new ListingSpec(LISTING_ID, 1, 0, 0, 1, 1_000_000));
+        when(securityMaster.getListingSpec(eq(LISTING_ID), anyLong()))
+                .thenReturn(new ListingSpec(LISTING_ID, 1, 0, 0, 1, 1_000_000));
         List<Intent> intents = new ArrayList<>();
         for (int i = 0; i < 200; i++) {
             intents.add(twoSidedIntent(100L, 110L, 10L));
@@ -104,7 +107,8 @@ class OmsBacktestAdapterTest {
 
     @Test
     void omsRejectsAreCountedByReason() throws Exception {
-        when(securityMaster.getListingSpec(LISTING_ID)).thenReturn(new ListingSpec(LISTING_ID, 1, 0, 0, 1, 1_000_000));
+        when(securityMaster.getListingSpec(eq(LISTING_ID), anyLong()))
+                .thenReturn(new ListingSpec(LISTING_ID, 1, 0, 0, 1, 1_000_000));
         BacktestRecorder recorder = new BacktestRecorder(1);
         OrderManagementSystem oms = new OrderManagementSystem(
                 new NullLogger(),

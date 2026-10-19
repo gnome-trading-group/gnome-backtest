@@ -14,6 +14,7 @@ import group.gnometrading.backtest.config.BacktestDriverFactory;
 import group.gnometrading.backtest.config.ListingSimConfig;
 import group.gnometrading.backtest.config.RiskConfig;
 import group.gnometrading.backtest.oms.OmsBacktestAdapter;
+import group.gnometrading.backtest.recorder.BacktestRecorder;
 import group.gnometrading.data.MarketDataEntry;
 import group.gnometrading.oms.OrderManagementSystem;
 import group.gnometrading.oms.pnl.PriceWriterAgent;
@@ -36,6 +37,9 @@ import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.Statics;
 import group.gnometrading.sequencer.GlobalSequence;
 import group.gnometrading.sequencer.SequencedRingBuffer;
+import group.gnometrading.sequencer.metrics.MetricRecorder;
+import group.gnometrading.sequencer.metrics.MetricStream;
+import group.gnometrading.sequencer.metrics.RecordBuffer;
 import group.gnometrading.simulation.book.SelfTradePrevention;
 import group.gnometrading.simulation.config.ExchangeSimulationConfig;
 import group.gnometrading.simulation.config.FeeModelConfig;
@@ -52,6 +56,7 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -106,6 +111,21 @@ class BacktestDriverSchedulingTest {
             previous = counter;
         }
         assertEquals(0, h.exchange.beforeTheirOrder, "no cancel or modify overtakes the order it refers to");
+    }
+
+    @Test
+    void theStrategysMetricRowsJoinTheBacktestResults() {
+        Harness h = new Harness(fixed(MS), new ScriptedStrategy(0, tick -> List.of()), new RiskConfig());
+        h.recorder = new BacktestRecorder();
+
+        h.run(ticks(3, MS, 50 * CENT, 10 * UNIT));
+
+        RecordBuffer ticks = h.recorder.getCustomBuffers().get(0);
+        assertEquals("ticks", ticks.getName());
+        assertEquals(3, ticks.getCount());
+        assertEquals(
+                List.of(0, 1, 2),
+                Arrays.stream(Arrays.copyOf(ticks.getIntColumn(0), 3)).boxed().toList());
     }
 
     @Test
@@ -392,6 +412,8 @@ class BacktestDriverSchedulingTest {
         private final Set<Long> finished = new HashSet<>();
         long filled;
         int afterFinal;
+        private MetricStream tickStream;
+        private int tickColumn;
 
         ScriptedStrategy(long processingTime, IntFunction<List<Intent>> onTick) {
             this.processingTime = processingTime;
@@ -400,6 +422,9 @@ class BacktestDriverSchedulingTest {
 
         @Override
         public List<Intent> onMarketData(Schema data) {
+            tickStream.begin();
+            tickStream.setInt(tickColumn, ticks);
+            tickStream.commit();
             return onTick.apply(ticks++);
         }
 
@@ -427,6 +452,13 @@ class BacktestDriverSchedulingTest {
 
         @Override
         public void onInit(PositionView positionView, SecurityMaster securityMaster, StrategyControl control) {}
+
+        @Override
+        public void registerMetrics(MetricRecorder recorder) {
+            tickStream = recorder.createStream("ticks");
+            tickColumn = tickStream.addIntColumn("tick");
+            tickStream.freeze();
+        }
     }
 
     /** The real exchange, noting what reaches it and when, and how much it fills. */
@@ -511,6 +543,7 @@ class BacktestDriverSchedulingTest {
         private final OmsBacktestAdapter adapter;
         private final PriceWriterAgent priceWriter;
         private final SequencedRingBuffer<Mbp10Schema> priceFeed;
+        BacktestRecorder recorder;
 
         Harness(LatencyConfig network, ScriptedStrategy callback, RiskConfig risk) {
             this(network, network, callback, risk);
@@ -578,7 +611,7 @@ class BacktestDriverSchedulingTest {
                     priceFeed,
                     s3,
                     STREAM_BUCKET,
-                    null,
+                    recorder,
                     false);
         }
     }

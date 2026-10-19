@@ -17,6 +17,10 @@ import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.Statics;
 import group.gnometrading.schemas.TimeInForce;
+import group.gnometrading.sequencer.metrics.ColumnDef;
+import group.gnometrading.sequencer.metrics.MetricStream;
+import group.gnometrading.sequencer.metrics.RecordBuffer;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -461,17 +465,6 @@ class BacktestRecorderTest {
     }
 
     @Test
-    void testDiscardingMetricRecorderAcceptsWritesAndKeepsNone() {
-        RecordBuffer buffer = MetricRecorder.discarding().createBuffer("signals");
-        int col = buffer.addDoubleColumn("value");
-        buffer.freeze();
-        for (int i = 0; i < 10; i++) {
-            buffer.setDouble(buffer.appendRow(), col, i);
-        }
-        assertEquals(0, buffer.getCount());
-    }
-
-    @Test
     void testRejectedOrderWritesOrderRecord() {
         long clientOid = 4L;
 
@@ -574,26 +567,21 @@ class BacktestRecorderTest {
     // =========================================================================
 
     @Test
-    void testCreateBufferRegistersInCustomList() {
-        RecordBuffer buf = recorder.createBuffer("signals", 1000);
-        buf.addDoubleColumn("fair_value");
-        buf.freeze();
+    void testEachStrategysMetricStreamsJoinTheCustomBuffers() {
+        MetricStream alpha = recorder.createMetricRecorder().createStream("alpha");
+        int signal = alpha.addDoubleColumn("signal");
+        alpha.freeze();
+        MetricStream beta = recorder.createMetricRecorder().createStream("beta");
+        beta.addLongColumn("timestamp");
+        beta.freeze();
 
-        assertEquals(1, recorder.getCustomBuffers().size());
-        assertEquals("signals", recorder.getCustomBuffers().get(0).getName());
-    }
+        alpha.begin();
+        alpha.setDouble(signal, 1.23);
+        alpha.commit();
 
-    @Test
-    void testCreateMetricRecorderProducesUsableHandle() {
-        MetricRecorder mr = recorder.createMetricRecorder();
-        RecordBuffer buf = mr.createBuffer("alpha");
-        int col = buf.addDoubleColumn("signal");
-        buf.freeze();
-
-        int row = buf.appendRow();
-        buf.setDouble(row, col, 1.23);
-
-        assertEquals(1, recorder.getCustomBuffers().size());
+        assertEquals(
+                List.of("alpha", "beta"),
+                recorder.getCustomBuffers().stream().map(RecordBuffer::getName).toList());
         assertEquals(1.23, recorder.getCustomBuffers().get(0).getDoubleColumn(0)[0], 1e-10);
     }
 

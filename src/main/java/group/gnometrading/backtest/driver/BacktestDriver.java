@@ -2,7 +2,6 @@ package group.gnometrading.backtest.driver;
 
 import group.gnometrading.backtest.oms.OmsBacktestAdapter;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
-import group.gnometrading.backtest.recorder.MetricAware;
 import group.gnometrading.data.MarketDataEntry;
 import group.gnometrading.oms.pnl.PriceWriterAgent;
 import group.gnometrading.schemas.Intent;
@@ -12,6 +11,7 @@ import group.gnometrading.schemas.OrderExecutionReport;
 import group.gnometrading.schemas.Schema;
 import group.gnometrading.sequencer.SequencedPoller;
 import group.gnometrading.sequencer.SequencedRingBuffer;
+import group.gnometrading.sequencer.metrics.MetricRecorder;
 import group.gnometrading.simulation.exchange.SimulatedExchange;
 import group.gnometrading.strategies.StrategyAgent;
 import java.nio.ByteOrder;
@@ -132,9 +132,7 @@ public final class BacktestDriver {
                         exchange, new Links(arrival, new NetworkChannel(), new NetworkChannel(), new NetworkChannel()));
             }
         }
-        if (recorder != null && strategy instanceof MetricAware metricAware) {
-            metricAware.setMetricRecorder(recorder.createMetricRecorder());
-        }
+        strategy.configureMetrics(recorder != null ? recorder.createMetricRecorder() : MetricRecorder.discarding());
     }
 
     private void collectIntent(long globalSeq, int templateId, UnsafeBuffer buf, int len) {

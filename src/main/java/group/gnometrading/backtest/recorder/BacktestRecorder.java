@@ -22,6 +22,8 @@ import group.gnometrading.schemas.Schema;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.Statics;
 import group.gnometrading.schemas.TradesSchema;
+import group.gnometrading.sequencer.metrics.ColumnarMetricRecorder;
+import group.gnometrading.sequencer.metrics.RecordBuffer;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -36,8 +38,8 @@ import java.util.Map;
  *
  * <p>All data is stored in {@link RecordBuffer} instances — one per event stream. The four
  * built-in streams (market, orders, fills, intents) are created and frozen at construction time.
- * Strategies may add custom streams via {@link #createBuffer} through a {@link MetricRecorder}
- * handle.
+ * Strategies add custom streams through the {@link ColumnarMetricRecorder} {@link #createMetricRecorder} gives each
+ * of them.
  *
  * <p>Built-in streams:
  * <ol>
@@ -70,7 +72,7 @@ public final class BacktestRecorder {
     private final RecordBuffer orderRecords;
     private final RecordBuffer fillRecords;
     private final RecordBuffer intentRecords;
-    private final List<RecordBuffer> customBuffers = new ArrayList<>();
+    private final List<ColumnarMetricRecorder> metricRecorders = new ArrayList<>();
 
     // -------------------------------------------------------------------------
     // Market column indices
@@ -438,25 +440,11 @@ public final class BacktestRecorder {
     // Custom buffer creation
     // =========================================================================
 
-    /**
-     * Creates a new named {@link RecordBuffer} for custom strategy metrics.
-     *
-     * <p>Called indirectly by strategies via {@link MetricRecorder}. The buffer is registered
-     * in the custom list so {@link #getCustomBuffers()} exposes it to the Python bridge.
-     *
-     * <p>Callers must add columns and call {@link RecordBuffer#freeze()} before replay starts.
-     */
-    public RecordBuffer createBuffer(String name, int initialCapacity) {
-        RecordBuffer buf = new RecordBuffer(name, initialCapacity);
-        customBuffers.add(buf);
-        return buf;
-    }
-
-    /**
-     * Creates a {@link MetricRecorder} handle suitable for passing to a strategy.
-     */
-    public MetricRecorder createMetricRecorder() {
-        return new MetricRecorder(this);
+    /** Creates the recorder a strategy declares its custom metric streams in; their buffers join the results. */
+    public ColumnarMetricRecorder createMetricRecorder() {
+        ColumnarMetricRecorder metricRecorder = new ColumnarMetricRecorder();
+        metricRecorders.add(metricRecorder);
+        return metricRecorder;
     }
 
     // =========================================================================
@@ -480,7 +468,11 @@ public final class BacktestRecorder {
     }
 
     public List<RecordBuffer> getCustomBuffers() {
-        return Collections.unmodifiableList(customBuffers);
+        List<RecordBuffer> buffers = new ArrayList<>();
+        for (ColumnarMetricRecorder metricRecorder : metricRecorders) {
+            buffers.addAll(metricRecorder.getBuffers());
+        }
+        return Collections.unmodifiableList(buffers);
     }
 
     public int getRecordDepth() {

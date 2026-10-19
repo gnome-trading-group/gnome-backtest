@@ -169,6 +169,9 @@ class BacktestDriverIntegrationTest {
                 group.gnometrading.SecurityMaster securityMaster,
                 group.gnometrading.strategies.StrategyControl control) {}
 
+        @Override
+        public void registerMetrics(group.gnometrading.sequencer.metrics.MetricRecorder recorder) {}
+
         private static Intent buildTakeIntent(Mbp10Schema schema, Side takeSide) {
             Intent intent = new Intent();
             intent.encoder
@@ -234,6 +237,9 @@ class BacktestDriverIntegrationTest {
                 group.gnometrading.oms.position.PositionView positionView,
                 group.gnometrading.SecurityMaster securityMaster,
                 group.gnometrading.strategies.StrategyControl control) {}
+
+        @Override
+        public void registerMetrics(group.gnometrading.sequencer.metrics.MetricRecorder recorder) {}
 
         private static Intent buildQuoteIntent(Mbp10Schema schema, long bidPx, long askPx) {
             Intent intent = new Intent();

@@ -2,19 +2,19 @@ package group.gnometrading.backtest.driver;
 
 import group.gnometrading.backtest.oms.OmsBacktestAdapter;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
-import group.gnometrading.data.MarketDataEntry;
+import group.gnometrading.data.StreamEntry;
+import group.gnometrading.md.StreamDirectory;
 import group.gnometrading.oms.pnl.PriceWriterAgent;
 import group.gnometrading.schemas.Intent;
 import group.gnometrading.schemas.IntentDecoder;
-import group.gnometrading.schemas.MessageHeaderDecoder;
 import group.gnometrading.schemas.OrderExecutionReport;
-import group.gnometrading.schemas.Schema;
+import group.gnometrading.schemas.StreamRecord;
 import group.gnometrading.sequencer.SequencedPoller;
 import group.gnometrading.sequencer.SequencedRingBuffer;
 import group.gnometrading.sequencer.metrics.MetricRecorder;
 import group.gnometrading.simulation.exchange.SimulatedExchange;
+import group.gnometrading.sm.Listing;
 import group.gnometrading.strategies.StrategyAgent;
-import java.nio.ByteOrder;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -57,11 +57,13 @@ public final class BacktestDriver {
     private static final int MINUTES_AHEAD = 30;
     private static final long LOAD_SLACK_NANOS = 60_000_000_000L;
 
-    private final List<MarketDataEntry> entries;
+    private final List<StreamEntry> entries;
     private final Map<SimulatedExchange, Links> links = new IdentityHashMap<>();
     // What has reached the strategy but not been handled yet, one entry per arrival.
     private final ArrayDeque<Arrival> strategyInbox = new ArrayDeque<>();
     private final StrategyAgent strategy;
+    // The run's streams and the listings they carry: market data names its stream, the exchanges its listing.
+    private final StreamDirectory streams;
     // Map of exchangeId -> (securityId -> SimulatedExchange)
     private final Map<Integer, Map<Integer, SimulatedExchange>> exchanges;
     private final OmsBacktestAdapter adapter;
@@ -100,8 +102,9 @@ public final class BacktestDriver {
     private record Arrival(List<?> messages, boolean rejects) {}
 
     public BacktestDriver(
-            List<MarketDataEntry> entries,
+            List<StreamEntry> entries,
             StrategyAgent strategy,
+            StreamDirectory streams,
             Map<Integer, Map<Integer, SimulatedExchange>> exchanges,
             Map<SimulatedExchange, MarketDataArrival> marketDataArrivals,
             OmsBacktestAdapter adapter,
@@ -113,6 +116,7 @@ public final class BacktestDriver {
             boolean measureProcessingTime) {
         this.entries = entries;
         this.strategy = strategy;
+        this.streams = streams;
         this.exchanges = exchanges;
         this.adapter = adapter;
         this.priceWriter = priceWriter;
@@ -132,6 +136,7 @@ public final class BacktestDriver {
                         exchange, new Links(arrival, new NetworkChannel(), new NetworkChannel(), new NetworkChannel()));
             }
         }
+        strategy.configureStreams(streams);
         strategy.configureMetrics(recorder != null ? recorder.createMetricRecorder() : MetricRecorder.discarding());
     }
 
@@ -177,9 +182,9 @@ public final class BacktestDriver {
     }
 
     /** Loads records already in memory, in the order given; for tests. */
-    void prepareRecords(List<? extends Schema> records) {
+    void prepareRecords(List<? extends StreamRecord> records) {
         queue = new PriorityQueue<>();
-        for (Schema schema : records) {
+        for (StreamRecord schema : records) {
             enqueueRecord(schema);
         }
         ready = true;
@@ -195,7 +200,7 @@ public final class BacktestDriver {
                 && stream.hasNext()
                 && (queue.isEmpty()
                         || stream.nextMinuteStartNanos() <= queue.peek().timestamp() + LOAD_SLACK_NANOS)) {
-            for (Schema schema : stream.next()) {
+            for (StreamRecord schema : stream.next()) {
                 enqueueRecord(schema);
             }
             if (!stream.hasNext()) {
@@ -208,17 +213,17 @@ public final class BacktestDriver {
     }
 
     /** Queues a record for the exchange at its event timestamp, unless it has none or the run is already past it. */
-    private void enqueueRecord(Schema schema) {
+    private void enqueueRecord(StreamRecord schema) {
         long exchangeTs = schema.getEventTimestamp();
         if (exchangeTs <= 0) {
-            logger.warning("Dropping " + schema.schemaType + " record with null event timestamp");
+            logger.warning("Dropping " + schema.recordType + " record with null event timestamp");
             droppedNullTimestamp++;
             return;
         }
         if (exchangeTs < lastProcessedTimestamp) {
             // Filed more than a minute away from its event time; replaying it now would run time backwards.
             if (droppedLate == 0) {
-                logger.warning("Dropping " + schema.schemaType + " record at " + exchangeTs
+                logger.warning("Dropping " + schema.recordType + " record at " + exchangeTs
                         + ", filed after the run passed its time; further ones are only counted");
             }
             droppedLate++;
@@ -263,8 +268,14 @@ public final class BacktestDriver {
         long timestamp = event.timestamp();
         switch (event.eventType()) {
             case EXCHANGE_MARKET_DATA -> {
-                Schema schema = (Schema) event.data();
+                StreamRecord schema = (StreamRecord) event.data();
                 SimulatedExchange exchange = getExchange(schema);
+                if (exchange == null) {
+                    // A stream no venue trades (a vendor feed): it reaches us when it was recorded reaching us.
+                    long recorded = schema.getRecvTimestamp();
+                    enqueue(recorded > timestamp ? recorded : timestamp, EventType.LOCAL_MARKET_DATA, schema);
+                    return;
+                }
                 Links link = links.get(exchange);
                 long received = link.marketDataArrival().arrival(schema, timestamp);
                 enqueue(link.marketData().arrival(received, 0), EventType.LOCAL_MARKET_DATA, schema);
@@ -281,12 +292,11 @@ public final class BacktestDriver {
                 }
             }
             case LOCAL_MARKET_DATA -> {
-                Schema schema = (Schema) event.data();
+                StreamRecord schema = (StreamRecord) event.data();
                 if (recorder != null) {
                     recorder.onMarketData(timestamp, schema);
                 }
-                priceFeed.publishRaw(
-                        schema.buffer, schema.messageHeaderDecoder.templateId(), schema.totalMessageSize());
+                priceFeed.publishRaw(schema.buffer, schema.templateId(), schema.totalMessageSize());
                 priceWriter.doWork();
                 deliverToStrategy(timestamp, new Arrival(List.of(schema), false));
             }
@@ -358,7 +368,7 @@ public final class BacktestDriver {
                 rejectSteps = 0;
             }
             for (Object message : arrival.messages()) {
-                if (message instanceof Schema schema) {
+                if (message instanceof StreamRecord schema) {
                     strategy.submitMarketData(schema);
                 } else {
                     strategy.submitExecReport((OrderExecutionReport) message);
@@ -423,14 +433,15 @@ public final class BacktestDriver {
         queue.add(new BacktestEvent(timestamp, eventType, nextSequence++, data));
     }
 
-    private SimulatedExchange getExchange(Schema schema) {
-        // exchangeId and securityId are at consistent offsets across all schema types:
-        // after the 8-byte SBE message header, exchangeId is a 2-byte uint16 at offset 0,
-        // and securityId is a 4-byte uint32 at offset 2.
-        int headerSize = MessageHeaderDecoder.ENCODED_LENGTH;
-        int exchangeId = schema.buffer.getShort(headerSize, ByteOrder.LITTLE_ENDIAN);
-        int securityId = schema.buffer.getInt(headerSize + 2, ByteOrder.LITTLE_ENDIAN);
-        return exchanges.get(exchangeId).get(securityId);
+    /** The exchange simulating the listing a record's stream carries, or null for a stream of anything else. */
+    private SimulatedExchange getExchange(StreamRecord schema) {
+        Listing listing = streams.listing(streams.listingId(schema.streamId()));
+        if (listing == null) {
+            return null;
+        }
+        Map<Integer, SimulatedExchange> bySecurity =
+                exchanges.get(listing.exchange().exchangeId());
+        return bySecurity == null ? null : bySecurity.get(listing.security().securityId());
     }
 
     private SimulatedExchange getExchangeForMessage(LocalMessage message) {

@@ -21,6 +21,11 @@ public class BacktestConfig {
     public LocalDateTime endDate;
     public List<ListingSimConfig> listings;
     /**
+     * Streams the strategy reads besides its listings' books (a vendor feed, say). Their records reach the strategy at
+     * their recorded receive time; no exchange simulates them.
+     */
+    public List<StreamConfig> streams = List.of();
+    /**
      * Blocks every listing on an exchange (by its code, e.g. KALSHI) simulates with in place of the exchange's
      * registry parameters. Empty means every listing simulates as its exchange is recorded.
      */

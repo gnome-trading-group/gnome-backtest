@@ -69,7 +69,7 @@ class OmsBacktestAdapterTest {
 
         Listing listing = new Listing(
                 LISTING_ID,
-                new Exchange(EXCHANGE_ID, "KALSHI", "Test", "US", null),
+                new Exchange(EXCHANGE_ID, "KALSHI", "Test", "US"),
                 new Security(SECURITY_ID, "SYM", null, null, null, null, null, null, false, false, 0L, 0L, true, 0),
                 "SYM",
                 "SYM");
@@ -145,7 +145,7 @@ class OmsBacktestAdapterTest {
             int securityId = 1_000 + i;
             Listing listing = new Listing(
                     LISTING_ID + 1 + i,
-                    new Exchange(EXCHANGE_ID, "KALSHI", "Test", "US", null),
+                    new Exchange(EXCHANGE_ID, "KALSHI", "Test", "US"),
                     new Security(
                             securityId, "S" + i, null, null, null, null, null, null, false, false, 0L, 0L, true, 0),
                     "S" + i,

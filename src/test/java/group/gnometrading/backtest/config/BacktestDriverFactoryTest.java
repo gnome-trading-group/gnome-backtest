@@ -16,9 +16,13 @@ import group.gnometrading.SecurityMaster;
 import group.gnometrading.backtest.driver.LocalMessage;
 import group.gnometrading.backtest.oms.OmsBacktestAdapter;
 import group.gnometrading.collections.IntToIntHashMap;
+import group.gnometrading.data.StreamEntry;
+import group.gnometrading.md.Stream;
+import group.gnometrading.md.StreamDirectory;
 import group.gnometrading.schemas.Intent;
 import group.gnometrading.schemas.IntentDecoder;
 import group.gnometrading.schemas.OrderType;
+import group.gnometrading.schemas.RecordType;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.Statics;
 import group.gnometrading.simulation.config.LatencyConfig;
@@ -31,6 +35,7 @@ import group.gnometrading.sm.Security;
 import group.gnometrading.sm.SimulationParameters;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -68,7 +73,7 @@ class BacktestDriverFactoryTest {
 
         Listing listing = new Listing(
                 LISTING_ID,
-                new Exchange(EXCHANGE_ID, "POLYMARKET_INTL", "Test", "US", null),
+                new Exchange(EXCHANGE_ID, "POLYMARKET_INTL", "Test", "US"),
                 new Security(SECURITY_ID, "SYM", null, null, null, null, null, null, false, false, 0L, 0L, true, 0),
                 "SYM",
                 "SYM");
@@ -87,13 +92,59 @@ class BacktestDriverFactoryTest {
              "queue_model": {"type": "risk_averse"},
              "self_trade_prevention": "CANCEL_INCOMING"}""";
 
+    /** One traded listing's book stream (7) and a vendor stream (9) the strategy also reads. */
+    private StreamDirectory streamsWithAVendorFeed() {
+        StreamDirectory streams = new StreamDirectory();
+        streams.add(
+                new Stream(7, 1, "POLYMARKET_INTL", "LISTING", LISTING_ID, null, "book", "us-east-1", 0, 0L, 0L, true),
+                securityMaster.getListing(LISTING_ID));
+        streams.add(new Stream(9, 2, "PANDASCORE", "MATCH", 0, "m-1", "book", "eu-west-1", 0, 0L, 0L, true), null);
+        return streams;
+    }
+
+    private static StreamConfig streamConfig(int streamId, RecordType recordType) {
+        StreamConfig stream = new StreamConfig();
+        stream.streamId = streamId;
+        stream.recordType = recordType.identifier();
+        return stream;
+    }
+
+    @Test
+    void tradedBooksReplayAsTheRecordTheSimulatorMatchesAndOtherStreamsAsConfigured() {
+        config.startDate = LocalDateTime.of(2026, 1, 1, 0, 0);
+        config.endDate = LocalDateTime.of(2026, 1, 1, 0, 2);
+        config.streams = List.of(streamConfig(9, RecordType.TRADES));
+
+        List<StreamEntry> entries =
+                BacktestDriverFactory.buildEntries(config, new int[] {LISTING_ID}, streamsWithAVendorFeed());
+
+        assertEquals(
+                List.of(
+                        "7/book/mbp-10/2026/01/01/00/00.zst",
+                        "7/book/mbp-10/2026/01/01/00/01.zst",
+                        "9/book/trades/2026/01/01/00/00.zst",
+                        "9/book/trades/2026/01/01/00/01.zst"),
+                entries.stream().map(StreamEntry::getKey).toList());
+    }
+
+    @Test
+    void aTradedBookConfiguredAsAnotherRecordIsRefused() {
+        config.startDate = LocalDateTime.of(2026, 1, 1, 0, 0);
+        config.endDate = LocalDateTime.of(2026, 1, 1, 0, 1);
+        config.streams = List.of(streamConfig(7, RecordType.MBO));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> BacktestDriverFactory.buildEntries(config, new int[] {LISTING_ID}, streamsWithAVendorFeed()));
+    }
+
     @Test
     void listingsSimulateWithTheirExchangesRecordedParametersUnderTheRunsOverrides() {
         SimulationOverrides exchange = new SimulationOverrides();
         exchange.queueModel = new QueueModelConfig.Optimistic();
         config.exchanges = Map.of("POLYMARKET_INTL", exchange);
         when(securityMaster.getExchange("POLYMARKET_INTL"))
-                .thenReturn(new Exchange(EXCHANGE_ID, "POLYMARKET_INTL", "Test", "US", null));
+                .thenReturn(new Exchange(EXCHANGE_ID, "POLYMARKET_INTL", "Test", "US"));
         SimulationOverrides listing = new SimulationOverrides();
         listing.networkLatency = new LatencyConfig.Static();
         config.listings.get(0).overrides = listing;
@@ -128,7 +179,7 @@ class BacktestDriverFactoryTest {
 
     @Test
     void anOverrideForARealExchangeTheRunDoesNotTradeIsLeftAlone() {
-        when(securityMaster.getExchange("KALSHI")).thenReturn(new Exchange(9, "KALSHI", "Kalshi", "us-east-1", null));
+        when(securityMaster.getExchange("KALSHI")).thenReturn(new Exchange(9, "KALSHI", "Kalshi", "us-east-1"));
         config.exchanges = Map.of("KALSHI", new SimulationOverrides());
         assertDoesNotThrow(() -> BacktestDriverFactory.resolvedSimulation(config, securityMaster));
     }

@@ -7,8 +7,9 @@ import group.gnometrading.backtest.driver.MarketDataArrival;
 import group.gnometrading.backtest.driver.SimulatedClock;
 import group.gnometrading.backtest.oms.OmsBacktestAdapter;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
-import group.gnometrading.data.MarketDataEntry;
+import group.gnometrading.data.StreamEntry;
 import group.gnometrading.logging.ConsoleLogger;
+import group.gnometrading.md.StreamDirectory;
 import group.gnometrading.oms.OrderManagementSystem;
 import group.gnometrading.oms.ledger.LedgerSink;
 import group.gnometrading.oms.pnl.PriceSlotRegistry;
@@ -23,6 +24,7 @@ import group.gnometrading.oms.risk.RiskEngine;
 import group.gnometrading.oms.state.PooledOrderStateManager;
 import group.gnometrading.schemas.IntentEncoder;
 import group.gnometrading.schemas.Mbp10Schema;
+import group.gnometrading.schemas.RecordType;
 import group.gnometrading.sequencer.GlobalSequence;
 import group.gnometrading.sequencer.SequencedRingBuffer;
 import group.gnometrading.simulation.config.ExchangeSimulationConfig;
@@ -45,6 +47,9 @@ import java.util.TreeSet;
 import software.amazon.awssdk.services.s3.S3Client;
 
 public final class BacktestDriverFactory {
+
+    /** The book record the simulated exchanges match against. */
+    private static final RecordType SIMULATED_BOOK_RECORD = RecordType.MBP_10;
 
     private BacktestDriverFactory() {}
 
@@ -73,17 +78,26 @@ public final class BacktestDriverFactory {
             BacktestContext context) {
 
         List<ResolvedListing> resolved = resolveListings(config, securityMaster);
+        int[] tradedListingIds =
+                resolved.stream().mapToInt(rl -> rl.listing.listingId()).toArray();
+        StreamDirectory streams = StreamDirectory.of(
+                securityMaster,
+                tradedListingIds,
+                config.streams.stream().mapToInt(stream -> stream.streamId).toArray());
+        if (recorder != null) {
+            recorder.configureStreams(streams);
+        }
 
         Map<SimulatedExchange, MarketDataArrival> marketDataArrivals = new IdentityHashMap<>();
         Map<Integer, Map<Integer, SimulatedExchange>> exchangeMap =
                 buildExchangeMap(config, resolved, securityMaster, marketDataArrivals);
-        List<MarketDataEntry> entries = buildEntries(config, resolved);
+        List<StreamEntry> entries = buildEntries(config, tradedListingIds, streams);
         OmsBacktestAdapter adapter = new OmsBacktestAdapter(oms, context.clock(), recorder);
         // Its own feed rather than the strategy's buffer: live it reads market data as it arrives, even while the
         // strategy is busy.
         SequencedRingBuffer<Mbp10Schema> priceFeed = new SequencedRingBuffer<>(Mbp10Schema::new, new GlobalSequence());
         PriceWriterAgent priceWriter =
-                new PriceWriterAgent(context.priceBuffer(), context.priceRegistry(), securityMaster, priceFeed);
+                new PriceWriterAgent(context.priceBuffer(), context.priceRegistry(), streams, priceFeed);
 
         String stage = System.getenv("STAGE");
         if (stage == null || stage.isEmpty()) {
@@ -93,6 +107,7 @@ public final class BacktestDriverFactory {
         return new BacktestDriver(
                 entries,
                 strategy,
+                streams,
                 exchangeMap,
                 marketDataArrivals,
                 adapter,
@@ -249,19 +264,31 @@ public final class BacktestDriverFactory {
         return map;
     }
 
-    private static List<MarketDataEntry> buildEntries(BacktestConfig config, List<ResolvedListing> resolved) {
-        List<MarketDataEntry> entries = new ArrayList<>();
-        for (ResolvedListing rl : resolved) {
-            int securityId = rl.listing.security().securityId();
-            int exchangeId = rl.listing.exchange().exchangeId();
-            var schemaType = rl.listing.exchange().schemaType();
-            LocalDateTime current = config.startDate;
-            while (current.isBefore(config.endDate)) {
-                entries.add(new MarketDataEntry(
-                        securityId, exchangeId, schemaType, current, MarketDataEntry.EntryType.AGGREGATED));
-                current = current.plusMinutes(1);
+    /**
+     * One entry per minute of the run for each stream: the traded listings' books as MBP-10, which the simulated
+     * exchanges match against whatever record their venue publishes, and every other stream as its config names.
+     */
+    static List<StreamEntry> buildEntries(BacktestConfig config, int[] tradedListingIds, StreamDirectory streams) {
+        Map<Integer, RecordType> recordTypes = new LinkedHashMap<>();
+        for (int listingId : tradedListingIds) {
+            recordTypes.put(streams.streamId(listingId), SIMULATED_BOOK_RECORD);
+        }
+        for (StreamConfig stream : config.streams) {
+            RecordType recordType = RecordType.forIdentifier(stream.recordType);
+            RecordType replayed = recordTypes.putIfAbsent(stream.streamId, recordType);
+            if (replayed != null && replayed != recordType) {
+                throw new IllegalArgumentException("Stream %d is a traded listing's book, replayed as %s, not %s"
+                        .formatted(stream.streamId, replayed.identifier(), recordType.identifier()));
             }
         }
+        List<StreamEntry> entries = new ArrayList<>();
+        recordTypes.forEach((streamId, recordType) -> {
+            LocalDateTime current = config.startDate;
+            while (current.isBefore(config.endDate)) {
+                entries.add(new StreamEntry(streamId, recordType, current, StreamEntry.EntryType.AGGREGATED));
+                current = current.plusMinutes(1);
+            }
+        });
         return entries;
     }
 

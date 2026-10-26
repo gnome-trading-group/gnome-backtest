@@ -4,10 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import group.gnometrading.data.MarketDataEntry;
+import group.gnometrading.data.StreamEntry;
 import group.gnometrading.schemas.Mbp10Schema;
-import group.gnometrading.schemas.Schema;
-import group.gnometrading.schemas.SchemaType;
+import group.gnometrading.schemas.RecordType;
+import group.gnometrading.schemas.StreamRecord;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -26,10 +26,10 @@ class MarketDataStreamTest {
     @Test
     void handsBackOneMinuteAtATimeInEntryOrder() throws IOException {
         // Listing-major, as the factory builds them; listing 2 had no activity in the second minute.
-        MarketDataEntry a0 = entry(1, 0);
-        MarketDataEntry a1 = entry(1, 1);
-        MarketDataEntry b0 = entry(2, 0);
-        MarketDataEntry b1 = entry(2, 1);
+        StreamEntry a0 = entry(1, 0);
+        StreamEntry a1 = entry(1, 1);
+        StreamEntry b0 = entry(2, 0);
+        StreamEntry b1 = entry(2, 1);
         save(a0, 10, 11);
         save(a1, 70);
         save(b0, 5);
@@ -48,16 +48,16 @@ class MarketDataStreamTest {
         }
     }
 
-    private MarketDataEntry entry(int securityId, int minute) {
-        return new MarketDataEntry(
-                securityId, 1, SchemaType.MBP_10, START.plusMinutes(minute), MarketDataEntry.EntryType.AGGREGATED);
+    private StreamEntry entry(int securityId, int minute) {
+        return new StreamEntry(
+                securityId, RecordType.MBP_10, START.plusMinutes(minute), StreamEntry.EntryType.AGGREGATED);
     }
 
-    private void save(MarketDataEntry entry, int... secondsIn) throws IOException {
-        List<Schema> records = new ArrayList<>();
+    private void save(StreamEntry entry, int... secondsIn) throws IOException {
+        List<StreamRecord> records = new ArrayList<>();
         for (int second : secondsIn) {
             Mbp10Schema record = new Mbp10Schema();
-            record.encoder.exchangeId(1).securityId(entry.getSecurityId()).timestampEvent(seconds(second));
+            record.encoder.streamId(entry.getStreamId()).timestampEvent(seconds(second));
             records.add(record);
         }
         entry.saveToS3(s3, BUCKET, records);
@@ -71,7 +71,7 @@ class MarketDataStreamTest {
         return time.toEpochSecond(ZoneOffset.UTC) * NANOS_PER_SECOND;
     }
 
-    private static List<Long> times(List<Schema> records) {
-        return records.stream().map(Schema::getEventTimestamp).toList();
+    private static List<Long> times(List<StreamRecord> records) {
+        return records.stream().map(StreamRecord::getEventTimestamp).toList();
     }
 }

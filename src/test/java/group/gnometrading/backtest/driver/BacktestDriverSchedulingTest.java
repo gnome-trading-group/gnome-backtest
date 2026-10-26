@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -15,26 +16,28 @@ import group.gnometrading.backtest.config.ListingSimConfig;
 import group.gnometrading.backtest.config.RiskConfig;
 import group.gnometrading.backtest.oms.OmsBacktestAdapter;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
-import group.gnometrading.data.MarketDataEntry;
+import group.gnometrading.data.StreamEntry;
+import group.gnometrading.md.Stream;
+import group.gnometrading.md.StreamDirectory;
 import group.gnometrading.oms.OrderManagementSystem;
 import group.gnometrading.oms.pnl.PriceWriterAgent;
 import group.gnometrading.oms.position.PositionView;
-import group.gnometrading.schemas.Action;
 import group.gnometrading.schemas.CancelOrder;
 import group.gnometrading.schemas.ExecType;
 import group.gnometrading.schemas.Intent;
 import group.gnometrading.schemas.IntentDecoder;
-import group.gnometrading.schemas.Mbp10Decoder;
 import group.gnometrading.schemas.Mbp10Schema;
 import group.gnometrading.schemas.ModifyOrder;
 import group.gnometrading.schemas.Order;
 import group.gnometrading.schemas.OrderExecutionReport;
 import group.gnometrading.schemas.OrderType;
+import group.gnometrading.schemas.RecordType;
 import group.gnometrading.schemas.RejectReason;
-import group.gnometrading.schemas.Schema;
-import group.gnometrading.schemas.SchemaType;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.Statics;
+import group.gnometrading.schemas.StreamRecord;
+import group.gnometrading.schemas.book.Action;
+import group.gnometrading.schemas.book.Mbp10Decoder;
 import group.gnometrading.sequencer.GlobalSequence;
 import group.gnometrading.sequencer.SequencedRingBuffer;
 import group.gnometrading.sequencer.metrics.MetricRecorder;
@@ -76,6 +79,7 @@ class BacktestDriverSchedulingTest {
     private static final int EXCHANGE_ID = 1;
     private static final int SECURITY_ID = 42;
     private static final int LISTING_ID = 100;
+    private static final int STREAM_ID = 700;
     private static final long CENT = Statics.PRICE_SCALING_FACTOR / 100;
     private static final long UNIT = Statics.SIZE_SCALING_FACTOR;
     private static final long PRICE_NULL = Mbp10Decoder.bidPrice0NullValue();
@@ -135,7 +139,7 @@ class BacktestDriverSchedulingTest {
         Harness h = new Harness(jitter(), strategy, new RiskConfig());
 
         // The ask moves between two prices, so each tick shows fresh liquidity.
-        List<Schema> records = new ArrayList<>();
+        List<StreamRecord> records = new ArrayList<>();
         for (int i = 0; i < 200; i++) {
             records.add(book(T0 + i * MS, (50 + i % 2) * CENT, 3 * UNIT));
         }
@@ -251,32 +255,29 @@ class BacktestDriverSchedulingTest {
         LocalDateTime start = LocalDateTime.of(2026, 8, 24, 0, 0);
         long t0 = start.toEpochSecond(ZoneOffset.UTC) * 1_000_000_000L;
         InMemoryS3 s3 = new InMemoryS3();
-        List<MarketDataEntry> entries = new ArrayList<>();
+        List<StreamEntry> entries = new ArrayList<>();
         for (int minute = 0; minute < 5; minute++) {
-            entries.add(new MarketDataEntry(
-                    SECURITY_ID,
-                    EXCHANGE_ID,
-                    SchemaType.MBP_10,
-                    start.plusMinutes(minute),
-                    MarketDataEntry.EntryType.AGGREGATED));
+            entries.add(new StreamEntry(
+                    STREAM_ID, RecordType.MBP_10, start.plusMinutes(minute), StreamEntry.EntryType.AGGREGATED));
         }
         // Out of order inside a file, one record filed a minute late, an empty minute, and one filed too late to
         // replay: the run has passed its time by the time its file loads.
-        List<Schema> minute0 = List.of(
+        List<StreamRecord> minute0 = List.of(
                 book(t0 + 10 * SEC, 50 * CENT, UNIT),
                 book(t0 + 5 * SEC, 50 * CENT, UNIT),
                 book(t0 + 55 * SEC, 50 * CENT, UNIT));
-        List<Schema> minute1 = List.of(book(t0 + 50 * SEC, 50 * CENT, UNIT), book(t0 + 70 * SEC, 50 * CENT, UNIT));
-        List<Schema> minute3 = List.of(book(t0 + 190 * SEC, 50 * CENT, UNIT));
+        List<StreamRecord> minute1 =
+                List.of(book(t0 + 50 * SEC, 50 * CENT, UNIT), book(t0 + 70 * SEC, 50 * CENT, UNIT));
+        List<StreamRecord> minute3 = List.of(book(t0 + 190 * SEC, 50 * CENT, UNIT));
         Mbp10Schema tooLate = book(t0 + 30 * SEC, 50 * CENT, UNIT);
-        List<Schema> minute4 = List.of(tooLate, book(t0 + 250 * SEC, 50 * CENT, UNIT));
+        List<StreamRecord> minute4 = List.of(tooLate, book(t0 + 250 * SEC, 50 * CENT, UNIT));
         entries.get(0).saveToS3(s3, STREAM_BUCKET, minute0);
         entries.get(1).saveToS3(s3, STREAM_BUCKET, minute1);
         entries.get(3).saveToS3(s3, STREAM_BUCKET, minute3);
         entries.get(4).saveToS3(s3, STREAM_BUCKET, minute4);
 
         Harness upFront = new Harness(fixed(MS), new ScriptedStrategy(0, tick -> List.of(take())), new RiskConfig());
-        List<Schema> everythingButTooLate = new ArrayList<>();
+        List<StreamRecord> everythingButTooLate = new ArrayList<>();
         everythingButTooLate.addAll(minute0);
         everythingButTooLate.addAll(minute1);
         everythingButTooLate.addAll(minute3);
@@ -307,8 +308,8 @@ class BacktestDriverSchedulingTest {
         return fixed;
     }
 
-    private static List<Schema> ticks(int count, long spacing, long askPrice, long askSize) {
-        List<Schema> records = new ArrayList<>();
+    private static List<StreamRecord> ticks(int count, long spacing, long askPrice, long askSize) {
+        List<StreamRecord> records = new ArrayList<>();
         for (int i = 0; i < count; i++) {
             records.add(book(T0 + i * spacing, askPrice, askSize));
         }
@@ -322,12 +323,11 @@ class BacktestDriverSchedulingTest {
     private static Mbp10Schema book(long timestamp, long received, long askPrice, long askSize) {
         Mbp10Schema schema = new Mbp10Schema();
         schema.encoder
-                .exchangeId(EXCHANGE_ID)
-                .securityId(SECURITY_ID)
+                .streamId(STREAM_ID)
                 .timestampEvent(timestamp)
                 .timestampRecv(received)
                 .action(Action.Add)
-                .side(Side.None)
+                .side(group.gnometrading.schemas.book.Side.None)
                 .price(PRICE_NULL)
                 .size(SIZE_NULL);
         schema.encoder
@@ -421,7 +421,7 @@ class BacktestDriverSchedulingTest {
         }
 
         @Override
-        public List<Intent> onMarketData(Schema data) {
+        public List<Intent> onMarketData(StreamRecord data) {
             tickStream.begin();
             tickStream.setInt(tickColumn, ticks);
             tickStream.commit();
@@ -511,7 +511,7 @@ class BacktestDriverSchedulingTest {
         }
 
         @Override
-        public List<OrderExecutionReport> onMarketData(Schema data) {
+        public List<OrderExecutionReport> onMarketData(StreamRecord data) {
             return count(delegate.onMarketData(data));
         }
 
@@ -521,7 +521,7 @@ class BacktestDriverSchedulingTest {
         }
 
         @Override
-        public List<SchemaType> getSupportedSchemas() {
+        public List<RecordType> getSupportedSchemas() {
             return delegate.getSupportedSchemas();
         }
 
@@ -543,6 +543,7 @@ class BacktestDriverSchedulingTest {
         private final OmsBacktestAdapter adapter;
         private final PriceWriterAgent priceWriter;
         private final SequencedRingBuffer<Mbp10Schema> priceFeed;
+        private final StreamDirectory streams = new StreamDirectory();
         BacktestRecorder recorder;
 
         Harness(LatencyConfig network, ScriptedStrategy callback, RiskConfig risk) {
@@ -553,12 +554,16 @@ class BacktestDriverSchedulingTest {
             SecurityMaster securityMaster = mock(SecurityMaster.class);
             Listing listing = new Listing(
                     LISTING_ID,
-                    new Exchange(EXCHANGE_ID, "KALSHI", "Test", "US", null),
+                    new Exchange(EXCHANGE_ID, "KALSHI", "Test", "US"),
                     new Security(SECURITY_ID, "SYM", null, null, null, null, null, null, false, false, 0L, 0L, true, 0),
                     "SYM",
                     "SYM");
-            when(securityMaster.getListing(EXCHANGE_ID, SECURITY_ID)).thenReturn(listing);
-            when(securityMaster.getListing(LISTING_ID)).thenReturn(listing);
+            // Orders still name their listing by exchange and security, which the OMS resolves.
+            lenient().when(securityMaster.getListing(EXCHANGE_ID, SECURITY_ID)).thenReturn(listing);
+            lenient().when(securityMaster.getListing(LISTING_ID)).thenReturn(listing);
+            streams.add(
+                    new Stream(STREAM_ID, 1, "KALSHI", "LISTING", LISTING_ID, null, "book", "US", 0, 0L, 0L, true),
+                    listing);
             when(securityMaster.getListingSpec(eq(LISTING_ID), anyLong()))
                     .thenReturn(new ListingSpec(LISTING_ID, 1, 0, 0, 1, 0));
 
@@ -584,26 +589,26 @@ class BacktestDriverSchedulingTest {
             strategy = PythonStrategyAgent.create(
                     0, oms.getPositionTracker().createPositionView(0), securityMaster, callback);
             adapter = new OmsBacktestAdapter(oms, context.clock());
-            priceWriter =
-                    new PriceWriterAgent(context.priceBuffer(), context.priceRegistry(), securityMaster, priceFeed);
+            priceWriter = new PriceWriterAgent(context.priceBuffer(), context.priceRegistry(), streams, priceFeed);
         }
 
-        void run(List<Schema> records) {
+        void run(List<StreamRecord> records) {
             BacktestDriver driver = driver(List.of(), null);
             driver.prepareRecords(records);
             driver.fullyExecute();
         }
 
-        void runStreamed(List<MarketDataEntry> entries, S3Client s3) {
+        void runStreamed(List<StreamEntry> entries, S3Client s3) {
             BacktestDriver driver = driver(entries, s3);
             driver.prepareData();
             driver.fullyExecute();
         }
 
-        private BacktestDriver driver(List<MarketDataEntry> entries, S3Client s3) {
+        private BacktestDriver driver(List<StreamEntry> entries, S3Client s3) {
             return new BacktestDriver(
                     entries,
                     strategy,
+                    streams,
                     Map.of(EXCHANGE_ID, Map.of(SECURITY_ID, exchange)),
                     Map.of(exchange, MarketDataArrival.of(marketData, 7)),
                     adapter,

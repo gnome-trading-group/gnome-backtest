@@ -1,5 +1,6 @@
 package group.gnometrading.backtest.recorder;
 
+import group.gnometrading.md.StreamDirectory;
 import group.gnometrading.oms.position.Position;
 import group.gnometrading.schemas.Bbo1mSchema;
 import group.gnometrading.schemas.Bbo1sSchema;
@@ -18,9 +19,9 @@ import group.gnometrading.schemas.Order;
 import group.gnometrading.schemas.OrderExecutionReport;
 import group.gnometrading.schemas.OrderExecutionReportDecoder;
 import group.gnometrading.schemas.RejectReason;
-import group.gnometrading.schemas.Schema;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.Statics;
+import group.gnometrading.schemas.StreamRecord;
 import group.gnometrading.schemas.TradesSchema;
 import group.gnometrading.sequencer.metrics.ColumnarMetricRecorder;
 import group.gnometrading.sequencer.metrics.RecordBuffer;
@@ -79,8 +80,8 @@ public final class BacktestRecorder {
     // -------------------------------------------------------------------------
 
     private final int mktTimestamp;
-    private final int mktExchangeId;
-    private final int mktSecurityId;
+    private final int mktStreamId;
+    private final int mktListingId;
     // per-level: index i corresponds to column mktBidPrices[i] .. mktAskSizes[i]
     private final int[] mktBidPrices;
     private final int[] mktBidSizes;
@@ -97,6 +98,7 @@ public final class BacktestRecorder {
     private final int ordAckTs;
     private final int ordTerminalTs;
     private final int ordExchangeId;
+    private final int ordListingId;
     private final int ordSecurityId;
     private final int ordStrategyId;
     private final int ordClientOid;
@@ -119,6 +121,7 @@ public final class BacktestRecorder {
 
     private final int filTimestamp;
     private final int filExchangeId;
+    private final int filListingId;
     private final int filSecurityId;
     private final int filStrategyId;
     private final int filClientOid;
@@ -136,6 +139,7 @@ public final class BacktestRecorder {
 
     private final int intTimestamp;
     private final int intExchangeId;
+    private final int intListingId;
     private final int intSecurityId;
     private final int intStrategyId;
     private final int intBidPrice;
@@ -150,7 +154,9 @@ public final class BacktestRecorder {
     // BBO cache and in-flight order state
     // =========================================================================
 
-    private final HashMap<Long, long[]> bboCache = new HashMap<>();
+    // By listing: market data names its stream and a fill its exchange and security, and both resolve to a listing.
+    private final HashMap<Integer, long[]> bboCache = new HashMap<>();
+    private StreamDirectory streams;
 
     private static final class InFlightOrder {
         long submitTimestamp;
@@ -238,8 +244,8 @@ public final class BacktestRecorder {
         // --- market buffer ---
         RecordBuffer mkt = new RecordBuffer("market", INITIAL_MARKET_CAPACITY);
         mktTimestamp = mkt.addLongColumn("timestamp");
-        mktExchangeId = mkt.addIntColumn("exchange_id");
-        mktSecurityId = mkt.addLongColumn("security_id");
+        mktStreamId = mkt.addIntColumn("stream_id");
+        mktListingId = mkt.addIntColumn("listing_id");
         mktBidPrices = new int[recordDepth];
         mktBidSizes = new int[recordDepth];
         mktAskPrices = new int[recordDepth];
@@ -262,6 +268,7 @@ public final class BacktestRecorder {
         ordTerminalTs = ord.addLongColumn("terminal_timestamp");
         ordExchangeId = ord.addIntColumn("exchange_id");
         ordSecurityId = ord.addLongColumn("security_id");
+        ordListingId = ord.addIntColumn("listing_id");
         ordStrategyId = ord.addIntColumn("strategy_id");
         ordClientOid = ord.addLongColumn("client_oid");
         ordSide = ord.addByteColumn("side");
@@ -284,6 +291,7 @@ public final class BacktestRecorder {
         filTimestamp = fil.addLongColumn("timestamp");
         filExchangeId = fil.addIntColumn("exchange_id");
         filSecurityId = fil.addLongColumn("security_id");
+        filListingId = fil.addIntColumn("listing_id");
         filStrategyId = fil.addIntColumn("strategy_id");
         filClientOid = fil.addLongColumn("client_oid");
         filSide = fil.addByteColumn("side");
@@ -301,6 +309,7 @@ public final class BacktestRecorder {
         intTimestamp = intent.addLongColumn("timestamp");
         intExchangeId = intent.addIntColumn("exchange_id");
         intSecurityId = intent.addLongColumn("security_id");
+        intListingId = intent.addIntColumn("listing_id");
         intStrategyId = intent.addIntColumn("strategy_id");
         intBidPrice = intent.addLongColumn("bid_price");
         intBidSize = intent.addLongColumn("bid_size");
@@ -318,14 +327,22 @@ public final class BacktestRecorder {
     // =========================================================================
 
     /**
+     * Gives the recorder the run's streams, so a fill can be matched to the book of the listing it traded. Called by
+     * the backtest driver factory before the run.
+     */
+    public void configureStreams(StreamDirectory directory) {
+        this.streams = directory;
+    }
+
+    /**
      * Records a market data tick and refreshes the BBO cache.
      * Called once per LOCAL_MARKET_DATA event from {@code BacktestDriver}.
      */
-    public void onMarketData(long timestamp, Schema data) {
+    public void onMarketData(long timestamp, StreamRecord data) {
         int idx = marketRecords.appendRow();
         marketRecords.setLong(idx, mktTimestamp, timestamp);
 
-        switch (data.schemaType) {
+        switch (data.recordType) {
             case MBP_10 -> writeMbp10(idx, (Mbp10Schema) data);
             case MBP_1 -> writeMbp1(idx, (Mbp1Schema) data);
             case BBO_1S -> writeBbo1S(idx, (Bbo1sSchema) data);
@@ -413,6 +430,8 @@ public final class BacktestRecorder {
         intentRecords.setLong(idx, intTimestamp, timestamp);
         intentRecords.setInt(idx, intExchangeId, intent.decoder.exchangeId());
         intentRecords.setLong(idx, intSecurityId, intent.decoder.securityId());
+        intentRecords.setInt(
+                idx, intListingId, listingId(intent.decoder.exchangeId(), (int) intent.decoder.securityId()));
         intentRecords.setInt(idx, intStrategyId, intent.decoder.strategyId());
 
         long bidPrice = intent.decoder.bidPrice();
@@ -564,6 +583,7 @@ public final class BacktestRecorder {
         fillRecords.setLong(idx, filTimestamp, timestamp);
         fillRecords.setInt(idx, filExchangeId, exchangeId);
         fillRecords.setLong(idx, filSecurityId, securityId);
+        fillRecords.setInt(idx, filListingId, listingId(exchangeId, (int) securityId));
         fillRecords.setInt(idx, filStrategyId, strategyId);
         fillRecords.setLong(idx, filClientOid, clientOid);
         fillRecords.setByte(idx, filSide, encodeSide(side));
@@ -572,8 +592,7 @@ public final class BacktestRecorder {
         fillRecords.setLong(idx, filLeavesQty, report.decoder.leavesQty());
         fillRecords.setDouble(idx, filFee, feeDollars(report));
 
-        long bboKey = bboKey(exchangeId, securityId);
-        long[] bbo = bboCache.get(bboKey);
+        long[] bbo = streams == null ? null : bboCache.get(streams.listingId(exchangeId, (int) securityId));
         if (bbo != null) {
             fillRecords.setLong(idx, filBookBidPrice, bbo[0]);
             fillRecords.setLong(idx, filBookAskPrice, bbo[1]);
@@ -610,6 +629,7 @@ public final class BacktestRecorder {
         orderRecords.setLong(idx, ordTerminalTs, timestamp);
         orderRecords.setInt(idx, ordExchangeId, ifo.exchangeId);
         orderRecords.setLong(idx, ordSecurityId, ifo.securityId);
+        orderRecords.setInt(idx, ordListingId, listingId(ifo.exchangeId, (int) ifo.securityId));
         orderRecords.setInt(idx, ordStrategyId, ifo.strategyId);
         orderRecords.setLong(idx, ordClientOid, clientOid);
         orderRecords.setByte(idx, ordSide, ifo.side);
@@ -632,23 +652,23 @@ public final class BacktestRecorder {
 
     private void writeBboCore(
             int idx,
-            int exchangeId,
-            long securityId,
+            int streamId,
             long bidPrice,
             long askPrice,
             long bidSize,
             long askSize,
             long tradePrice,
             long tradeSize) {
-        marketRecords.setInt(idx, mktExchangeId, exchangeId);
-        marketRecords.setLong(idx, mktSecurityId, securityId);
+        int listingId = streams == null ? StreamDirectory.NONE : streams.listingId(streamId);
+        marketRecords.setInt(idx, mktStreamId, streamId);
+        marketRecords.setInt(idx, mktListingId, listingId == StreamDirectory.NONE ? 0 : listingId);
         marketRecords.setLong(idx, mktBidPrices[0], bidPrice);
         marketRecords.setLong(idx, mktAskPrices[0], askPrice);
         marketRecords.setLong(idx, mktBidSizes[0], bidSize);
         marketRecords.setLong(idx, mktAskSizes[0], askSize);
         marketRecords.setLong(idx, mktLastTradePrice, tradePrice);
         marketRecords.setLong(idx, mktLastTradeSize, tradeSize);
-        updateBboCache(exchangeId, securityId, bidPrice, askPrice);
+        updateBboCache(listingId, bidPrice, askPrice);
     }
 
     @SuppressWarnings({
@@ -658,12 +678,9 @@ public final class BacktestRecorder {
     })
     private void writeMbp10(int idx, Mbp10Schema schema) {
         var dec = schema.decoder;
-        int eid = dec.exchangeId();
-        long sid = dec.securityId();
         writeBboCore(
                 idx,
-                eid,
-                sid,
+                schema.streamId(),
                 dec.bidPrice0(),
                 dec.askPrice0(),
                 dec.bidSize0(),
@@ -733,8 +750,7 @@ public final class BacktestRecorder {
         var dec = schema.decoder;
         writeBboCore(
                 idx,
-                dec.exchangeId(),
-                dec.securityId(),
+                schema.streamId(),
                 dec.bidPrice0(),
                 dec.askPrice0(),
                 dec.bidSize0(),
@@ -747,8 +763,7 @@ public final class BacktestRecorder {
         var dec = schema.decoder;
         writeBboCore(
                 idx,
-                dec.exchangeId(),
-                dec.securityId(),
+                schema.streamId(),
                 dec.bidPrice0(),
                 dec.askPrice0(),
                 dec.bidSize0(),
@@ -761,8 +776,7 @@ public final class BacktestRecorder {
         var dec = schema.decoder;
         writeBboCore(
                 idx,
-                dec.exchangeId(),
-                dec.securityId(),
+                schema.streamId(),
                 dec.bidPrice0(),
                 dec.askPrice0(),
                 dec.bidSize0(),
@@ -773,55 +787,56 @@ public final class BacktestRecorder {
 
     private void writeTrades(int idx, TradesSchema schema) {
         var dec = schema.decoder;
-        marketRecords.setInt(idx, mktExchangeId, dec.exchangeId());
-        marketRecords.setLong(idx, mktSecurityId, dec.securityId());
+        marketRecords.setInt(idx, mktStreamId, schema.streamId());
         marketRecords.setLong(idx, mktLastTradePrice, dec.price());
         marketRecords.setLong(idx, mktLastTradeSize, dec.size());
     }
 
     private void writeMbo(int idx, MboSchema schema) {
         var dec = schema.decoder;
-        marketRecords.setInt(idx, mktExchangeId, dec.exchangeId());
-        marketRecords.setLong(idx, mktSecurityId, dec.securityId());
+        marketRecords.setInt(idx, mktStreamId, schema.streamId());
         marketRecords.setLong(idx, mktLastTradePrice, dec.price());
         marketRecords.setLong(idx, mktLastTradeSize, dec.size());
     }
 
     private void writeOhlcv1S(int idx, Ohlcv1sSchema schema) {
         var dec = schema.decoder;
-        writeOhlcvClose(idx, dec.exchangeId(), dec.securityId(), dec.close());
+        writeOhlcvClose(idx, schema.streamId(), dec.close());
     }
 
     private void writeOhlcv1M(int idx, Ohlcv1mSchema schema) {
         var dec = schema.decoder;
-        writeOhlcvClose(idx, dec.exchangeId(), dec.securityId(), dec.close());
+        writeOhlcvClose(idx, schema.streamId(), dec.close());
     }
 
     private void writeOhlcv1H(int idx, Ohlcv1hSchema schema) {
         var dec = schema.decoder;
-        writeOhlcvClose(idx, dec.exchangeId(), dec.securityId(), dec.close());
+        writeOhlcvClose(idx, schema.streamId(), dec.close());
     }
 
-    private void writeOhlcvClose(int idx, int exchangeId, long securityId, long close) {
-        marketRecords.setInt(idx, mktExchangeId, exchangeId);
-        marketRecords.setLong(idx, mktSecurityId, securityId);
+    private void writeOhlcvClose(int idx, int streamId, long close) {
+        marketRecords.setInt(idx, mktStreamId, streamId);
         marketRecords.setLong(idx, mktBidPrices[0], close);
         marketRecords.setLong(idx, mktAskPrices[0], close);
         marketRecords.setLong(idx, mktLastTradePrice, close);
-        updateBboCache(exchangeId, securityId, close, close);
+        updateBboCache(streamId, close, close);
     }
 
     // =========================================================================
     // Utilities
     // =========================================================================
 
-    private static long bboKey(int exchangeId, long securityId) {
-        return ((long) exchangeId << 32) | (securityId & 0xFFFFFFFFL);
+    /** The listing an order names by exchange and security, or 0 when the run's streams don't include it. */
+    private int listingId(int exchangeId, int securityId) {
+        int listingId = streams == null ? StreamDirectory.NONE : streams.listingId(exchangeId, securityId);
+        return listingId == StreamDirectory.NONE ? 0 : listingId;
     }
 
-    private void updateBboCache(int exchangeId, long securityId, long bidPrice, long askPrice) {
-        long key = bboKey(exchangeId, securityId);
-        long[] bbo = bboCache.computeIfAbsent(key, k -> new long[2]);
+    private void updateBboCache(int listingId, long bidPrice, long askPrice) {
+        if (listingId == StreamDirectory.NONE) {
+            return;
+        }
+        long[] bbo = bboCache.computeIfAbsent(listingId, k -> new long[2]);
         bbo[0] = bidPrice;
         bbo[1] = askPrice;
     }

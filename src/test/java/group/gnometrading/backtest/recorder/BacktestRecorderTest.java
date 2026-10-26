@@ -2,11 +2,11 @@ package group.gnometrading.backtest.recorder;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import group.gnometrading.schemas.Action;
+import group.gnometrading.md.Stream;
+import group.gnometrading.md.StreamDirectory;
 import group.gnometrading.schemas.CancelOrder;
 import group.gnometrading.schemas.ExecType;
 import group.gnometrading.schemas.Intent;
-import group.gnometrading.schemas.Mbp10Decoder;
 import group.gnometrading.schemas.Mbp10Schema;
 import group.gnometrading.schemas.ModifyOrder;
 import group.gnometrading.schemas.Order;
@@ -17,9 +17,14 @@ import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.Statics;
 import group.gnometrading.schemas.TimeInForce;
+import group.gnometrading.schemas.book.Action;
+import group.gnometrading.schemas.book.Mbp10Decoder;
 import group.gnometrading.sequencer.metrics.ColumnDef;
 import group.gnometrading.sequencer.metrics.MetricStream;
 import group.gnometrading.sequencer.metrics.RecordBuffer;
+import group.gnometrading.sm.Exchange;
+import group.gnometrading.sm.Listing;
+import group.gnometrading.sm.Security;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,20 +36,33 @@ class BacktestRecorderTest {
 
     BacktestRecorder recorder;
 
+    // Stream 7 carries listing 3: exchange 1, security 100, as the orders and reports below name it.
+    private static final int STREAM_ID = 7;
+
     @BeforeEach
     void setUp() {
         recorder = new BacktestRecorder();
+        StreamDirectory streams = new StreamDirectory();
+        streams.add(
+                new Stream(STREAM_ID, 1, "KALSHI", "LISTING", 3, null, "book", "us-east-1", 0, 0L, 0L, true),
+                new Listing(
+                        3,
+                        new Exchange(1, "KALSHI", "Kalshi", "us-east-1"),
+                        new Security(100, "X", null, null, null, null, null, null, false, false, 0L, 0L, true, 0),
+                        "X",
+                        "X"));
+        recorder.configureStreams(streams);
     }
 
     // =========================================================================
     // Helpers
     // =========================================================================
 
-    static Mbp10Schema makeBbo(int exchangeId, long securityId, long bidPx, long bidSz, long askPx, long askSz) {
+    static Mbp10Schema makeBbo(int streamId, long bidPx, long bidSz, long askPx, long askSz) {
         Mbp10Schema schema = new Mbp10Schema();
-        schema.encoder.exchangeId(exchangeId).securityId(securityId);
+        schema.encoder.streamId(streamId);
         schema.encoder.action(Action.Add);
-        schema.encoder.side(Side.None);
+        schema.encoder.side(group.gnometrading.schemas.book.Side.None);
         schema.encoder.price(PRICE_NULL).size(SIZE_NULL);
         schema.encoder.bidPrice0(bidPx).bidSize0(bidSz).askPrice0(askPx).askSize0(askSz);
         schema.encoder
@@ -165,7 +183,7 @@ class BacktestRecorderTest {
 
     @Test
     void testOnMarketDataRecordsBbo() {
-        Mbp10Schema schema = makeBbo(1, 100, 9_900_000L, 10L, 10_100_000L, 5L);
+        Mbp10Schema schema = makeBbo(STREAM_ID, 9_900_000L, 10L, 10_100_000L, 5L);
         recorder.onMarketData(12345L, schema);
 
         assertEquals(1, recorder.getMarketRecordCount());
@@ -175,8 +193,30 @@ class BacktestRecorderTest {
     }
 
     @Test
+    void marketRowsCarryTheStreamAndTheListingItCarries() {
+        recorder.onMarketData(0L, makeBbo(STREAM_ID, 100L, 5L, 200L, 5L));
+        recorder.onMarketData(1L, makeBbo(99, 100L, 5L, 200L, 5L));
+
+        RecordBuffer mkt = recorder.getMarketRecords();
+        int[] streamIds = intColumn(mkt, "stream_id");
+        int[] listingIds = intColumn(mkt, "listing_id");
+        assertEquals(STREAM_ID, streamIds[0]);
+        assertEquals(3, listingIds[0]);
+        assertEquals(99, streamIds[1]);
+        assertEquals(0, listingIds[1], "a stream outside the run's directory carries no listing");
+    }
+
+    private static int[] intColumn(RecordBuffer buffer, String name) {
+        return buffer.getIntColumn(buffer.getColumns().stream()
+                .filter(c -> c.name().equals(name))
+                .findFirst()
+                .orElseThrow()
+                .columnIndex());
+    }
+
+    @Test
     void testMarketRecordsHasNoDerivedColumns() {
-        recorder.onMarketData(0L, makeBbo(1, 100, 9_900_000L, 10L, 10_100_000L, 5L));
+        recorder.onMarketData(0L, makeBbo(STREAM_ID, 9_900_000L, 10L, 10_100_000L, 5L));
 
         RecordBuffer mkt = recorder.getMarketRecords();
         boolean hasMid = mkt.getColumns().stream().anyMatch(c -> c.name().equals("mid_price"));
@@ -193,9 +233,9 @@ class BacktestRecorderTest {
 
     @Test
     void testMultipleMarketDataRows() {
-        recorder.onMarketData(100L, makeBbo(1, 100, 100L, 5L, 200L, 5L));
-        recorder.onMarketData(200L, makeBbo(1, 100, 110L, 5L, 210L, 5L));
-        recorder.onMarketData(300L, makeBbo(1, 100, 120L, 5L, 220L, 5L));
+        recorder.onMarketData(100L, makeBbo(STREAM_ID, 100L, 5L, 200L, 5L));
+        recorder.onMarketData(200L, makeBbo(STREAM_ID, 110L, 5L, 210L, 5L));
+        recorder.onMarketData(300L, makeBbo(STREAM_ID, 120L, 5L, 220L, 5L));
 
         assertEquals(3, recorder.getMarketRecordCount());
     }
@@ -212,7 +252,7 @@ class BacktestRecorderTest {
         long fee = 500L;
 
         // Establish BBO so fill can be annotated with book state
-        recorder.onMarketData(0L, makeBbo(1, 100, 9_900_000L, 10L, 10_100_000L, 5L));
+        recorder.onMarketData(0L, makeBbo(STREAM_ID, 9_900_000L, 10L, 10_100_000L, 5L));
 
         recorder.onOrderSubmitted(1000L, makeLimitOrder(1, 100, price, size, Side.Bid, clientOid));
         recorder.onExecution(
@@ -490,7 +530,7 @@ class BacktestRecorderTest {
     void testFillAnnotatedWithBboAtFillTime() {
         long bidPx = 9_900_000L;
         long askPx = 10_100_000L;
-        recorder.onMarketData(0L, makeBbo(1, 100, bidPx, 10L, askPx, 5L));
+        recorder.onMarketData(0L, makeBbo(STREAM_ID, bidPx, 10L, askPx, 5L));
 
         long clientOid = 5L;
         long fillPrice = 10_050_000L;
@@ -591,7 +631,7 @@ class BacktestRecorderTest {
 
     @Test
     void testClearResetsAllBuiltInStreams() {
-        recorder.onMarketData(0L, makeBbo(1, 100, 100L, 5L, 200L, 5L));
+        recorder.onMarketData(0L, makeBbo(STREAM_ID, 100L, 5L, 200L, 5L));
         recorder.onOrderSubmitted(1000L, makeLimitOrder(1, 100, 100L, 10L, Side.Bid, 1L));
         recorder.onExecution(
                 1001L, makeExecReport(1, 100, ExecType.NEW, OrderStatus.NEW, 0, 0, 0, 10L, 0, 1L), 0, Side.Bid);

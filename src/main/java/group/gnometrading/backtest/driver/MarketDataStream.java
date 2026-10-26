@@ -1,7 +1,7 @@
 package group.gnometrading.backtest.driver;
 
-import group.gnometrading.data.MarketDataEntry;
-import group.gnometrading.schemas.Schema;
+import group.gnometrading.data.StreamEntry;
+import group.gnometrading.schemas.StreamRecord;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayDeque;
@@ -31,8 +31,8 @@ final class MarketDataStream {
     private final S3Client s3Client;
     private final String bucket;
     private final ExecutorService pool;
-    private final List<Map.Entry<LocalDateTime, List<MarketDataEntry>>> minutes;
-    private final ArrayDeque<List<Future<List<Schema>>>> inFlight = new ArrayDeque<>();
+    private final List<Map.Entry<LocalDateTime, List<StreamEntry>>> minutes;
+    private final ArrayDeque<List<Future<List<StreamRecord>>>> inFlight = new ArrayDeque<>();
     private int nextToSubmit = 0;
     private int nextToTake = 0;
     private int files = 0;
@@ -42,11 +42,11 @@ final class MarketDataStream {
      * Groups {@code entries} by minute, keeping their order within each minute, and starts downloading the first
      * {@code minutesAhead} minutes.
      */
-    MarketDataStream(List<MarketDataEntry> entries, S3Client s3Client, String bucket, int threads, int minutesAhead) {
+    MarketDataStream(List<StreamEntry> entries, S3Client s3Client, String bucket, int threads, int minutesAhead) {
         this.s3Client = s3Client;
         this.bucket = bucket;
-        TreeMap<LocalDateTime, List<MarketDataEntry>> byMinute = new TreeMap<>();
-        for (MarketDataEntry entry : entries) {
+        TreeMap<LocalDateTime, List<StreamEntry>> byMinute = new TreeMap<>();
+        for (StreamEntry entry : entries) {
             byMinute.computeIfAbsent(entry.getTimestamp(), k -> new ArrayList<>())
                     .add(entry);
         }
@@ -75,13 +75,13 @@ final class MarketDataStream {
      * The next minute's records: each file's in stored order, files in the order the entries were given. Waits for
      * downloads still running, then starts the minute that keeps the same number ahead.
      */
-    List<Schema> next() {
-        List<Future<List<Schema>>> minute = inFlight.poll();
+    List<StreamRecord> next() {
+        List<Future<List<StreamRecord>>> minute = inFlight.poll();
         nextToTake++;
         submitNext();
-        List<Schema> records = new ArrayList<>();
+        List<StreamRecord> records = new ArrayList<>();
         try {
-            for (Future<List<Schema>> file : minute) {
+            for (Future<List<StreamRecord>> file : minute) {
                 records.addAll(file.get());
             }
         } catch (InterruptedException e) {
@@ -110,17 +110,17 @@ final class MarketDataStream {
         if (nextToSubmit >= minutes.size()) {
             return;
         }
-        List<MarketDataEntry> entries = minutes.get(nextToSubmit++).getValue();
-        List<Future<List<Schema>>> futures = new ArrayList<>(entries.size());
-        for (MarketDataEntry entry : entries) {
+        List<StreamEntry> entries = minutes.get(nextToSubmit++).getValue();
+        List<Future<List<StreamRecord>>> futures = new ArrayList<>(entries.size());
+        for (StreamEntry entry : entries) {
             futures.add(pool.submit(() -> load(entry)));
         }
         inFlight.add(futures);
     }
 
-    private List<Schema> load(MarketDataEntry entry) {
+    private List<StreamRecord> load(StreamEntry entry) {
         try {
-            List<Schema> records = entry.loadFromS3(s3Client, bucket);
+            List<StreamRecord> records = entry.loadFromS3(s3Client, bucket);
             count(false);
             return records;
         } catch (NoSuchKeyException e) {

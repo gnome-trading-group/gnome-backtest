@@ -15,12 +15,12 @@ import group.gnometrading.oms.OrderManagementSystem;
 import group.gnometrading.oms.position.PositionView;
 import group.gnometrading.schemas.Intent;
 import group.gnometrading.schemas.IntentDecoder;
-import group.gnometrading.schemas.Mbp10Decoder;
 import group.gnometrading.schemas.Mbp10Schema;
 import group.gnometrading.schemas.OrderExecutionReport;
 import group.gnometrading.schemas.OrderType;
-import group.gnometrading.schemas.Schema;
 import group.gnometrading.schemas.Side;
+import group.gnometrading.schemas.StreamRecord;
+import group.gnometrading.schemas.book.Mbp10Decoder;
 import group.gnometrading.strategies.PythonStrategyAgent;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -115,6 +115,13 @@ class BacktestDriverIntegrationTest {
      */
     static class MomentumCallback implements PythonStrategyAgent.PythonStrategyCallback {
 
+        private group.gnometrading.md.StreamDirectory streams;
+
+        @Override
+        public void onStreams(group.gnometrading.md.StreamDirectory directory) {
+            this.streams = directory;
+        }
+
         private static final int LOOKBACK = 5;
         private static final long PRICE_NULL = Mbp10Decoder.priceNullValue();
 
@@ -123,7 +130,7 @@ class BacktestDriverIntegrationTest {
         int signalCount = 0;
 
         @Override
-        public List<Intent> onMarketData(Schema data) {
+        public List<Intent> onMarketData(StreamRecord data) {
             if (!(data instanceof Mbp10Schema mbp10)) {
                 return List.of();
             }
@@ -172,11 +179,12 @@ class BacktestDriverIntegrationTest {
         @Override
         public void registerMetrics(group.gnometrading.sequencer.metrics.MetricRecorder recorder) {}
 
-        private static Intent buildTakeIntent(Mbp10Schema schema, Side takeSide) {
+        private Intent buildTakeIntent(Mbp10Schema schema, Side takeSide) {
+            group.gnometrading.sm.Listing listing = streams.listing(streams.listingId(schema.streamId()));
             Intent intent = new Intent();
             intent.encoder
-                    .exchangeId((short) schema.decoder.exchangeId())
-                    .securityId(schema.decoder.securityId())
+                    .exchangeId((short) listing.exchange().exchangeId())
+                    .securityId(listing.security().securityId())
                     .strategyId(0)
                     .bidPrice(IntentDecoder.bidPriceNullValue())
                     .bidSize(IntentDecoder.bidSizeNullValue())
@@ -199,6 +207,13 @@ class BacktestDriverIntegrationTest {
      */
     static class SpammingMarketMakerCallback implements PythonStrategyAgent.PythonStrategyCallback {
 
+        private group.gnometrading.md.StreamDirectory streams;
+
+        @Override
+        public void onStreams(group.gnometrading.md.StreamDirectory directory) {
+            this.streams = directory;
+        }
+
         private static final int WARMUP_TICKS = 5;
         private static final long PRICE_NULL = Mbp10Decoder.priceNullValue();
         private static final long QUOTE_SIZE = 100_000L;
@@ -207,7 +222,7 @@ class BacktestDriverIntegrationTest {
         private int tickCount = 0;
 
         @Override
-        public List<Intent> onMarketData(Schema data) {
+        public List<Intent> onMarketData(StreamRecord data) {
             if (!(data instanceof Mbp10Schema mbp10)) return List.of();
             long bid = mbp10.decoder.bidPrice0();
             long ask = mbp10.decoder.askPrice0();
@@ -241,11 +256,12 @@ class BacktestDriverIntegrationTest {
         @Override
         public void registerMetrics(group.gnometrading.sequencer.metrics.MetricRecorder recorder) {}
 
-        private static Intent buildQuoteIntent(Mbp10Schema schema, long bidPx, long askPx) {
+        private Intent buildQuoteIntent(Mbp10Schema schema, long bidPx, long askPx) {
+            group.gnometrading.sm.Listing listing = streams.listing(streams.listingId(schema.streamId()));
             Intent intent = new Intent();
             intent.encoder
-                    .exchangeId((short) schema.decoder.exchangeId())
-                    .securityId(schema.decoder.securityId())
+                    .exchangeId((short) listing.exchange().exchangeId())
+                    .securityId(listing.security().securityId())
                     .strategyId(0)
                     .bidPrice(bidPx)
                     .bidSize(QUOTE_SIZE)

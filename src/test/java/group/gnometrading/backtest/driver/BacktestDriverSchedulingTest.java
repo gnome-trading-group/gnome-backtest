@@ -142,6 +142,22 @@ class BacktestDriverSchedulingTest {
     }
 
     @Test
+    void anOrderWhileTheBookIsBadIsRefusedAndOneAfterItRecoversGoesOut() {
+        // Takes on every update: the one answering the bad-data mark is refused, the next good book trades again.
+        ScriptedStrategy strategy = new ScriptedStrategy(0, tick -> List.of(takeIntent(Side.Bid, UNIT, 60 * CENT)));
+        Harness h = new Harness(fixed(MS), strategy, new RiskConfig());
+        h.missing = List.of(new MissingStretch(T0 + 5 * MS, T0 + 50 * MS, "TASK_LOST"));
+
+        h.run(List.of(
+                book(T0, 50 * CENT, 10 * UNIT),
+                book(T0 + MS, 50 * CENT, 10 * UNIT),
+                book(T0 + 60 * MS, 50 * CENT, 10 * UNIT)));
+
+        assertEquals(1, strategy.marketDataBadRejects, "the take sent on the bad book");
+        assertEquals(3, h.exchange.newOrders.size(), "the takes on the three good books");
+    }
+
+    @Test
     void theStrategysMetricRowsJoinTheBacktestResults() {
         Harness h = new Harness(fixed(MS), new ScriptedStrategy(0, tick -> List.of()), new RiskConfig());
         h.recorder = new BacktestRecorder();
@@ -438,6 +454,7 @@ class BacktestDriverSchedulingTest {
         private final Set<Long> finished = new HashSet<>();
         long filled;
         int afterFinal;
+        int marketDataBadRejects;
         final List<Seen> seen = new ArrayList<>();
         private MetricStream tickStream;
         private int tickColumn;
@@ -467,6 +484,9 @@ class BacktestDriverSchedulingTest {
             }
             if (type == ExecType.FILL || type == ExecType.PARTIAL_FILL) {
                 filled += report.decoder.filledQty();
+            }
+            if (type == ExecType.REJECT && report.decoder.rejectReason() == RejectReason.MARKET_DATA_BAD) {
+                marketDataBadRejects++;
             }
             boolean riskReject =
                     type == ExecType.REJECT && report.decoder.rejectReason() == RejectReason.RISK_LIMIT_EXCEEDED;

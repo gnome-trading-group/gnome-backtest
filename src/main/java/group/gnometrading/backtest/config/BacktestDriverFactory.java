@@ -7,6 +7,8 @@ import group.gnometrading.backtest.driver.MarketDataArrival;
 import group.gnometrading.backtest.driver.SimulatedClock;
 import group.gnometrading.backtest.oms.OmsBacktestAdapter;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
+import group.gnometrading.data.MarketDataApi;
+import group.gnometrading.data.MissingData;
 import group.gnometrading.data.StreamEntry;
 import group.gnometrading.logging.ConsoleLogger;
 import group.gnometrading.md.StreamDirectory;
@@ -36,6 +38,7 @@ import group.gnometrading.sm.ListingSpec;
 import group.gnometrading.strategies.StrategyAgent;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -44,9 +47,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.logging.Logger;
 import software.amazon.awssdk.services.s3.S3Client;
 
 public final class BacktestDriverFactory {
+
+    private static final Logger LOGGER = Logger.getLogger(BacktestDriverFactory.class.getName());
 
     /** The book record the simulated exchanges match against. */
     private static final RecordType SIMULATED_BOOK_RECORD = RecordType.MBP_10;
@@ -67,6 +73,7 @@ public final class BacktestDriverFactory {
      * @param recorder        optional recorder; null disables recording
      * @param s3Client        S3 client for market data loading
      * @param context         what the OMS was built with ({@link #buildContext})
+     * @param marketDataApi   where collection says data is missing; null runs without knowing, as {@code ignore}
      */
     public static BacktestDriver create(
             BacktestConfig config,
@@ -75,7 +82,8 @@ public final class BacktestDriverFactory {
             StrategyAgent strategy,
             BacktestRecorder recorder,
             S3Client s3Client,
-            BacktestContext context) {
+            BacktestContext context,
+            MarketDataApi marketDataApi) {
 
         List<ResolvedListing> resolved = resolveListings(config, securityMaster);
         int[] tradedListingIds =
@@ -104,7 +112,7 @@ public final class BacktestDriverFactory {
             stage = "prod";
         }
         String bucket = "gnome-market-data-" + stage.toLowerCase();
-        return new BacktestDriver(
+        BacktestDriver driver = new BacktestDriver(
                 entries,
                 strategy,
                 streams,
@@ -117,6 +125,46 @@ public final class BacktestDriverFactory {
                 bucket,
                 recorder,
                 config.measureProcessingTime);
+        if (marketDataApi != null) {
+            applyMissing(
+                    config,
+                    driver,
+                    marketDataApi.missing(streamIds(entries), nanos(config.startDate), nanos(config.endDate)));
+        } else {
+            LOGGER.warning("No market-data API given: the run can't know where its data is missing");
+        }
+        return driver;
+    }
+
+    /** Reports where data is missing, and marks it or refuses the run as the config says. */
+    static void applyMissing(BacktestConfig config, BacktestDriver driver, List<MissingData> missing) {
+        driver.reportMissingData(missing);
+        long missingNs = missing.stream().mapToLong(MissingData::missingNs).sum();
+        if (missingNs > 0) {
+            LOGGER.warning(String.format(
+                    "Market data missing: %.1f minutes across %d streams (%s)",
+                    missingNs / 60e9,
+                    missing.stream().filter(m -> m.missingNs() > 0).count(),
+                    config.onMissing.name().toLowerCase()));
+        }
+        switch (config.onMissing) {
+            case FAIL -> {
+                if (missingNs > 0) {
+                    throw new IllegalStateException("Market data is missing for this run, and on_missing is fail");
+                }
+            }
+            case MARK -> missing.forEach(m -> driver.markMissing(m.streamId(), m.missing()));
+            case IGNORE -> {}
+        }
+    }
+
+    private static int[] streamIds(List<StreamEntry> entries) {
+        return entries.stream().mapToInt(StreamEntry::getStreamId).distinct().toArray();
+    }
+
+    private static long nanos(LocalDateTime utc) {
+        Instant instant = utc.toInstant(ZoneOffset.UTC);
+        return instant.getEpochSecond() * 1_000_000_000L + instant.getNano();
     }
 
     /**
@@ -285,7 +333,7 @@ public final class BacktestDriverFactory {
         recordTypes.forEach((streamId, recordType) -> {
             LocalDateTime current = config.startDate;
             while (current.isBefore(config.endDate)) {
-                entries.add(new StreamEntry(streamId, recordType, current, StreamEntry.EntryType.AGGREGATED));
+                entries.add(new StreamEntry(streamId, recordType, current));
                 current = current.plusMinutes(1);
             }
         });

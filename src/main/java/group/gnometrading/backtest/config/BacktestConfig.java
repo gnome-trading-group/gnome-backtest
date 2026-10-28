@@ -57,6 +57,8 @@ public class BacktestConfig {
      * derived from it, unless the model sets a seed itself.
      */
     public long seed = DEFAULT_SEED;
+    /** What the run does where collection says its market data is missing. */
+    public OnMissing onMissing = OnMissing.MARK;
 
     public static BacktestConfig fromYaml(Path path) throws IOException {
         ObjectMapper mapper = new ObjectMapper(new YAMLFactory())

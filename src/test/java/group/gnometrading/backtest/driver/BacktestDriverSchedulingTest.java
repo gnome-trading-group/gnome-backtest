@@ -16,6 +16,7 @@ import group.gnometrading.backtest.config.ListingSimConfig;
 import group.gnometrading.backtest.config.RiskConfig;
 import group.gnometrading.backtest.oms.OmsBacktestAdapter;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
+import group.gnometrading.data.MissingStretch;
 import group.gnometrading.data.StreamEntry;
 import group.gnometrading.md.Stream;
 import group.gnometrading.md.StreamDirectory;
@@ -115,6 +116,29 @@ class BacktestDriverSchedulingTest {
             previous = counter;
         }
         assertEquals(0, h.exchange.beforeTheirOrder, "no cancel or modify overtakes the order it refers to");
+    }
+
+    @Test
+    void aStreamGoingMissingReachesTheStrategyAsItsLastBookFlaggedBad() {
+        ScriptedStrategy strategy = new ScriptedStrategy(0, tick -> List.of());
+        Harness h = new Harness(fixed(MS), strategy, new RiskConfig());
+        // The first stretch is before any book, so has nothing to flag.
+        h.missing = List.of(
+                new MissingStretch(T0 - SEC, T0, "NOT_COLLECTED"),
+                new MissingStretch(T0 + 5 * MS, T0 + 50 * MS, "TASK_LOST"));
+
+        BacktestDriver driver = h.run(List.of(
+                book(T0, 50 * CENT, UNIT), book(T0 + MS, 51 * CENT, UNIT), book(T0 + 60 * MS, 52 * CENT, UNIT)));
+
+        assertEquals(
+                List.of(
+                        new Seen(T0, 50 * CENT, false),
+                        new Seen(T0 + MS, 51 * CENT, false),
+                        new Seen(T0 + 5 * MS, 51 * CENT, true),
+                        new Seen(T0 + 60 * MS, 52 * CENT, false)),
+                strategy.seen);
+        assertEquals(1, driver.getMissingMarksSent());
+        assertEquals(1, driver.getMissingMarksWithoutBook());
     }
 
     @Test
@@ -257,8 +281,7 @@ class BacktestDriverSchedulingTest {
         InMemoryS3 s3 = new InMemoryS3();
         List<StreamEntry> entries = new ArrayList<>();
         for (int minute = 0; minute < 5; minute++) {
-            entries.add(new StreamEntry(
-                    STREAM_ID, RecordType.MBP_10, start.plusMinutes(minute), StreamEntry.EntryType.AGGREGATED));
+            entries.add(new StreamEntry(STREAM_ID, RecordType.MBP_10, start.plusMinutes(minute)));
         }
         // Out of order inside a file, one record filed a minute late, an empty minute, and one filed too late to
         // replay: the run has passed its time by the time its file loads.
@@ -404,6 +427,9 @@ class BacktestDriverSchedulingTest {
      * A strategy that answers its n-th update with what {@code onTick} gives and a risk reject with {@code onRiskReject}.
      * It counts the fills it hears of, and reports that reach it for an order after that order's final one.
      */
+    /** A book update as the strategy saw it. */
+    private record Seen(long eventTimestamp, long askPrice, boolean badData) {}
+
     private static final class ScriptedStrategy implements PythonStrategyAgent.PythonStrategyCallback {
         private final long processingTime;
         private final IntFunction<List<Intent>> onTick;
@@ -412,6 +438,7 @@ class BacktestDriverSchedulingTest {
         private final Set<Long> finished = new HashSet<>();
         long filled;
         int afterFinal;
+        final List<Seen> seen = new ArrayList<>();
         private MetricStream tickStream;
         private int tickColumn;
 
@@ -422,6 +449,7 @@ class BacktestDriverSchedulingTest {
 
         @Override
         public List<Intent> onMarketData(StreamRecord data) {
+            seen.add(new Seen(data.getEventTimestamp(), ((Mbp10Schema) data).decoder.askPrice0(), data.isBadData()));
             tickStream.begin();
             tickStream.setInt(tickColumn, ticks);
             tickStream.commit();
@@ -545,6 +573,7 @@ class BacktestDriverSchedulingTest {
         private final SequencedRingBuffer<Mbp10Schema> priceFeed;
         private final StreamDirectory streams = new StreamDirectory();
         BacktestRecorder recorder;
+        List<MissingStretch> missing = List.of();
 
         Harness(LatencyConfig network, ScriptedStrategy callback, RiskConfig risk) {
             this(network, network, callback, risk);
@@ -592,10 +621,12 @@ class BacktestDriverSchedulingTest {
             priceWriter = new PriceWriterAgent(context.priceBuffer(), context.priceRegistry(), streams, priceFeed);
         }
 
-        void run(List<StreamRecord> records) {
+        BacktestDriver run(List<StreamRecord> records) {
             BacktestDriver driver = driver(List.of(), null);
+            driver.markMissing(STREAM_ID, missing);
             driver.prepareRecords(records);
             driver.fullyExecute();
+            return driver;
         }
 
         void runStreamed(List<StreamEntry> entries, S3Client s3) {

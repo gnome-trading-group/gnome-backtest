@@ -49,8 +49,7 @@ class MarketDataStreamTest {
     }
 
     private StreamEntry entry(int securityId, int minute) {
-        return new StreamEntry(
-                securityId, RecordType.MBP_10, START.plusMinutes(minute), StreamEntry.EntryType.AGGREGATED);
+        return new StreamEntry(securityId, RecordType.MBP_10, START.plusMinutes(minute));
     }
 
     private void save(StreamEntry entry, int... secondsIn) throws IOException {

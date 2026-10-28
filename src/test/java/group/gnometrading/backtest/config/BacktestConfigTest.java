@@ -51,6 +51,15 @@ class BacktestConfigTest {
     }
 
     @Test
+    void onMissingDefaultsToMarkAndReadsFromYaml(@TempDir Path dir) throws Exception {
+        Path yaml = dir.resolve("config.yaml");
+        Files.writeString(yaml, "on_missing: fail\n");
+
+        assertEquals(OnMissing.FAIL, BacktestConfig.fromYaml(yaml).onMissing);
+        assertEquals(OnMissing.MARK, new BacktestConfig().onMissing);
+    }
+
+    @Test
     void simulationOverridesReadPerExchangeAndPerListing(@TempDir Path dir) throws Exception {
         Path yaml = dir.resolve("config.yaml");
         Files.writeString(

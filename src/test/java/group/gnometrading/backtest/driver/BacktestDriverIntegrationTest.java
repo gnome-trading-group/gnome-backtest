@@ -61,7 +61,7 @@ class BacktestDriverIntegrationTest {
         S3Client s3Client = S3Client.create();
 
         BacktestDriver driver =
-                BacktestDriverFactory.create(config, securityMaster, oms, strategy, recorder, s3Client, context);
+                BacktestDriverFactory.create(config, securityMaster, oms, strategy, recorder, s3Client, context, null);
         driver.prepareData();
         driver.fullyExecute();
 
@@ -100,7 +100,7 @@ class BacktestDriverIntegrationTest {
         S3Client s3Client = S3Client.create();
 
         BacktestDriver driver =
-                BacktestDriverFactory.create(config, securityMaster, oms, strategy, recorder, s3Client, context);
+                BacktestDriverFactory.create(config, securityMaster, oms, strategy, recorder, s3Client, context, null);
         driver.prepareData();
         driver.fullyExecute();
 

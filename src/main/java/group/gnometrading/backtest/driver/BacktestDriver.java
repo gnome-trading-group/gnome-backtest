@@ -2,6 +2,8 @@ package group.gnometrading.backtest.driver;
 
 import group.gnometrading.backtest.oms.OmsBacktestAdapter;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
+import group.gnometrading.data.MissingData;
+import group.gnometrading.data.MissingStretch;
 import group.gnometrading.data.StreamEntry;
 import group.gnometrading.md.StreamDirectory;
 import group.gnometrading.oms.pnl.PriceWriterAgent;
@@ -23,6 +25,8 @@ import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import org.agrona.collections.Int2ObjectHashMap;
+import org.agrona.collections.IntHashSet;
 import org.agrona.concurrent.UnsafeBuffer;
 import software.amazon.awssdk.services.s3.S3Client;
 
@@ -77,6 +81,14 @@ public final class BacktestDriver {
     // Drains intents published by the strategy after each doWork() call
     private final SequencedPoller intentPoller;
     private final List<Intent> pendingIntents = new ArrayList<>();
+
+    // Where data is missing, and each marked stream's last book, to flag bad when it goes missing.
+    private final List<MissingDataMarker> missingMarkers = new ArrayList<>();
+    private final IntHashSet markedStreams = new IntHashSet();
+    private final Int2ObjectHashMap<StreamRecord> lastBooks = new Int2ObjectHashMap<>();
+    private int markersSent = 0;
+    private int markersWithoutBook = 0;
+    private List<MissingData> missingData = List.of();
 
     private BacktestRecorder recorder;
     private PriorityQueue<BacktestEvent> queue;
@@ -171,6 +183,39 @@ public final class BacktestDriver {
     }
 
     /**
+     * Marks the stream bad at the start of each stretch it has no data, as the gateway does live when a book stops
+     * being trusted. A stretch starting before the stream's first book has nothing to mark. Call before
+     * {@code prepareData()}.
+     */
+    public void markMissing(int streamId, List<MissingStretch> stretches) {
+        if (ready) {
+            throw new IllegalStateException("Mark missing data before preparing it");
+        }
+        for (MissingStretch stretch : stretches) {
+            missingMarkers.add(new MissingDataMarker(streamId, stretch.fromNs()));
+        }
+        markedStreams.add(streamId);
+    }
+
+    /** Where collection says the run's streams had no data, for its results. */
+    public void reportMissingData(List<MissingData> missing) {
+        this.missingData = List.copyOf(missing);
+    }
+
+    public List<MissingData> getMissingData() {
+        return missingData;
+    }
+
+    /** Bad-data marks sent, and those skipped because the stream had no book yet. */
+    public int getMissingMarksSent() {
+        return markersSent;
+    }
+
+    public int getMissingMarksWithoutBook() {
+        return markersWithoutBook;
+    }
+
+    /**
      * Readies market data to stream from S3 a minute at a time as the run reaches it, downloading ahead on background
      * threads. Each record becomes one EXCHANGE_MARKET_DATA event at its event timestamp; its LOCAL_MARKET_DATA copy
      * is scheduled when the exchange processes it, so the market data connection carries records in order.
@@ -178,12 +223,20 @@ public final class BacktestDriver {
     public void prepareData() {
         queue = new PriorityQueue<>();
         stream = new MarketDataStream(entries, s3Client, bucket, LOADER_THREADS, MINUTES_AHEAD);
+        enqueueMissingMarkers();
         ready = true;
+    }
+
+    private void enqueueMissingMarkers() {
+        for (MissingDataMarker marker : missingMarkers) {
+            enqueue(marker.atNanos(), EventType.EXCHANGE_MARKET_DATA, marker);
+        }
     }
 
     /** Loads records already in memory, in the order given; for tests. */
     void prepareRecords(List<? extends StreamRecord> records) {
         queue = new PriorityQueue<>();
+        enqueueMissingMarkers();
         for (StreamRecord schema : records) {
             enqueueRecord(schema);
         }
@@ -268,7 +321,10 @@ public final class BacktestDriver {
         long timestamp = event.timestamp();
         switch (event.eventType()) {
             case EXCHANGE_MARKET_DATA -> {
-                StreamRecord schema = (StreamRecord) event.data();
+                StreamRecord schema = marketData(event.data());
+                if (schema == null) {
+                    return;
+                }
                 SimulatedExchange exchange = getExchange(schema);
                 if (exchange == null) {
                     // A stream no venue trades (a vendor feed): it reaches us when it was recorded reaching us.
@@ -431,6 +487,28 @@ public final class BacktestDriver {
 
     private void enqueue(long timestamp, EventType eventType, Object data) {
         queue.add(new BacktestEvent(timestamp, eventType, nextSequence++, data));
+    }
+
+    /**
+     * The record an exchange market data event carries: a recorded one, or for a missing-data marker the stream's last
+     * book flagged bad, or null when it has none yet.
+     */
+    private StreamRecord marketData(Object data) {
+        if (data instanceof MissingDataMarker marker) {
+            StreamRecord lastBook = lastBooks.get(marker.streamId());
+            if (lastBook == null) {
+                markersWithoutBook++;
+                return null;
+            }
+            markersSent++;
+            return marker.flag(lastBook);
+        }
+        StreamRecord schema = (StreamRecord) data;
+        int streamId = schema.streamId();
+        if (markedStreams.contains(streamId) && MissingDataMarker.BOOK_STATES.contains(schema.recordType)) {
+            lastBooks.put(streamId, schema);
+        }
+        return schema;
     }
 
     /** The exchange simulating the listing a record's stream carries, or null for a stream of anything else. */

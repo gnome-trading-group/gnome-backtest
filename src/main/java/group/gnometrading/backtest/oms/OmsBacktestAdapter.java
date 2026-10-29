@@ -5,6 +5,7 @@ import group.gnometrading.backtest.driver.SimulatedClock;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
 import group.gnometrading.oms.OmsAgent;
 import group.gnometrading.oms.OrderManagementSystem;
+import group.gnometrading.oms.pnl.PriceWriter;
 import group.gnometrading.oms.state.TrackedOrder;
 import group.gnometrading.schemas.CancelOrder;
 import group.gnometrading.schemas.CancelOrderDecoder;
@@ -64,12 +65,16 @@ public final class OmsBacktestAdapter {
     // Shared with the OMS, which stamps its reports and times risk re-sweeps off it.
     private final SimulatedClock clock;
 
-    public OmsBacktestAdapter(final OrderManagementSystem oms, final SimulatedClock clock) {
-        this(oms, clock, null);
+    public OmsBacktestAdapter(
+            final OrderManagementSystem oms, final PriceWriter priceWriter, final SimulatedClock clock) {
+        this(oms, priceWriter, clock, null);
     }
 
     public OmsBacktestAdapter(
-            final OrderManagementSystem oms, final SimulatedClock clock, final BacktestRecorder recorder) {
+            final OrderManagementSystem oms,
+            final PriceWriter priceWriter,
+            final SimulatedClock clock,
+            final BacktestRecorder recorder) {
         this.oms = oms;
         this.clock = clock;
         this.recorder = recorder;
@@ -81,8 +86,8 @@ public final class OmsBacktestAdapter {
         this.strategyExecReportBuffer =
                 new SequencedRingBuffer<>(OrderExecutionReport::new, globalSequence, OUTBOUND_BUFFER_SIZE);
 
-        this.omsAgent =
-                new OmsAgent(oms, intentBuffer, execReportBuffer, orderOutboundBuffer, strategyExecReportBuffer, clock);
+        this.omsAgent = new OmsAgent(
+                oms, intentBuffer, execReportBuffer, orderOutboundBuffer, strategyExecReportBuffer, priceWriter, clock);
         this.orderOutboundPoller = orderOutboundBuffer.createPoller(this::onOrderOutboundEvent);
         this.strategyExecReportPoller = strategyExecReportBuffer.createPoller(this::onStrategyExecReportEvent);
 

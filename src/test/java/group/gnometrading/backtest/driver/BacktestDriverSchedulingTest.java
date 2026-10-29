@@ -21,7 +21,7 @@ import group.gnometrading.data.StreamEntry;
 import group.gnometrading.md.Stream;
 import group.gnometrading.md.StreamDirectory;
 import group.gnometrading.oms.OrderManagementSystem;
-import group.gnometrading.oms.pnl.PriceWriterAgent;
+import group.gnometrading.oms.pnl.PriceWriter;
 import group.gnometrading.oms.position.PositionView;
 import group.gnometrading.schemas.CancelOrder;
 import group.gnometrading.schemas.ExecType;
@@ -589,7 +589,7 @@ class BacktestDriverSchedulingTest {
         private final PythonStrategyAgent strategy;
         private final LatencyConfig marketData;
         private final OmsBacktestAdapter adapter;
-        private final PriceWriterAgent priceWriter;
+        private final PriceWriter priceWriter;
         private final SequencedRingBuffer<Mbp10Schema> priceFeed;
         private final StreamDirectory streams = new StreamDirectory();
         BacktestRecorder recorder;
@@ -637,8 +637,8 @@ class BacktestDriverSchedulingTest {
             priceFeed = new SequencedRingBuffer<>(Mbp10Schema::new, new GlobalSequence());
             strategy = PythonStrategyAgent.create(
                     0, oms.getPositionTracker().createPositionView(0), securityMaster, callback);
-            adapter = new OmsBacktestAdapter(oms, context.clock());
-            priceWriter = new PriceWriterAgent(context.priceBuffer(), context.priceRegistry(), streams, priceFeed);
+            priceWriter = new PriceWriter(context.priceBuffer(), context.priceRegistry(), streams, priceFeed);
+            adapter = new OmsBacktestAdapter(oms, priceWriter, context.clock());
         }
 
         BacktestDriver run(List<StreamRecord> records) {

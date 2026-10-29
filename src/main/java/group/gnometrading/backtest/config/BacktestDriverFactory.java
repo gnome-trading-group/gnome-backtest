@@ -15,7 +15,7 @@ import group.gnometrading.md.StreamDirectory;
 import group.gnometrading.oms.OrderManagementSystem;
 import group.gnometrading.oms.ledger.LedgerSink;
 import group.gnometrading.oms.pnl.PriceSlotRegistry;
-import group.gnometrading.oms.pnl.PriceWriterAgent;
+import group.gnometrading.oms.pnl.PriceWriter;
 import group.gnometrading.oms.pnl.SharedPriceBuffer;
 import group.gnometrading.oms.position.DefaultPositionTracker;
 import group.gnometrading.oms.position.SharedPositionBuffer;
@@ -100,12 +100,11 @@ public final class BacktestDriverFactory {
         Map<Integer, Map<Integer, SimulatedExchange>> exchangeMap =
                 buildExchangeMap(config, resolved, securityMaster, marketDataArrivals);
         List<StreamEntry> entries = buildEntries(config, tradedListingIds, streams);
-        OmsBacktestAdapter adapter = new OmsBacktestAdapter(oms, context.clock(), recorder);
-        // Its own feed rather than the strategy's buffer: live it reads market data as it arrives, even while the
-        // strategy is busy.
+        // Its own feed rather than the strategy's buffer, written before the strategy sees each record: the OMS then
+        // prices against exactly the books the strategy had seen, as it does live.
         SequencedRingBuffer<Mbp10Schema> priceFeed = new SequencedRingBuffer<>(Mbp10Schema::new, new GlobalSequence());
-        PriceWriterAgent priceWriter =
-                new PriceWriterAgent(context.priceBuffer(), context.priceRegistry(), streams, priceFeed);
+        PriceWriter priceWriter = new PriceWriter(context.priceBuffer(), context.priceRegistry(), streams, priceFeed);
+        OmsBacktestAdapter adapter = new OmsBacktestAdapter(oms, priceWriter, context.clock(), recorder);
 
         String stage = System.getenv("STAGE");
         if (stage == null || stage.isEmpty()) {

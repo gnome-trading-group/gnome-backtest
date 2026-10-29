@@ -12,9 +12,11 @@ import group.gnometrading.backtest.driver.LocalMessage;
 import group.gnometrading.backtest.driver.SimulatedClock;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
 import group.gnometrading.logging.NullLogger;
+import group.gnometrading.md.StreamDirectory;
 import group.gnometrading.oms.OrderManagementSystem;
 import group.gnometrading.oms.ledger.LedgerSink;
 import group.gnometrading.oms.pnl.PriceSlotRegistry;
+import group.gnometrading.oms.pnl.PriceWriter;
 import group.gnometrading.oms.pnl.SharedPriceBuffer;
 import group.gnometrading.oms.position.DefaultPositionTracker;
 import group.gnometrading.oms.position.SharedPositionBuffer;
@@ -22,6 +24,9 @@ import group.gnometrading.oms.risk.RiskEngine;
 import group.gnometrading.oms.state.PooledOrderStateManager;
 import group.gnometrading.schemas.Intent;
 import group.gnometrading.schemas.IntentDecoder;
+import group.gnometrading.schemas.Mbp10Schema;
+import group.gnometrading.sequencer.GlobalSequence;
+import group.gnometrading.sequencer.SequencedRingBuffer;
 import group.gnometrading.sm.Exchange;
 import group.gnometrading.sm.Listing;
 import group.gnometrading.sm.ListingSpec;
@@ -53,6 +58,15 @@ class OmsBacktestAdapterTest {
     private final SimulatedClock clock = new SimulatedClock();
     private OmsBacktestAdapter adapter;
 
+    /** A writer with nothing to read: these tests price nothing off market data. */
+    private static PriceWriter idlePrices() {
+        return new PriceWriter(
+                new SharedPriceBuffer(1),
+                new PriceSlotRegistry(1),
+                new StreamDirectory(),
+                new SequencedRingBuffer<>(Mbp10Schema::new, new GlobalSequence()));
+    }
+
     @BeforeEach
     void setUp() {
         OrderManagementSystem oms = new OrderManagementSystem(
@@ -65,7 +79,7 @@ class OmsBacktestAdapterTest {
                 new PriceSlotRegistry(1),
                 LedgerSink.NONE,
                 clock);
-        adapter = new OmsBacktestAdapter(oms, clock);
+        adapter = new OmsBacktestAdapter(oms, idlePrices(), clock);
 
         Listing listing = new Listing(
                 LISTING_ID,
@@ -120,7 +134,7 @@ class OmsBacktestAdapterTest {
                 new PriceSlotRegistry(1),
                 LedgerSink.NONE,
                 clock);
-        OmsBacktestAdapter recording = new OmsBacktestAdapter(oms, clock, recorder);
+        OmsBacktestAdapter recording = new OmsBacktestAdapter(oms, idlePrices(), clock, recorder);
 
         recording.processIntents(1L, List.of(twoSidedIntent(100L, 110L, 10L)));
 
@@ -139,7 +153,7 @@ class OmsBacktestAdapterTest {
                 new PriceSlotRegistry(1),
                 LedgerSink.NONE,
                 clock);
-        OmsBacktestAdapter wide = new OmsBacktestAdapter(oms, clock);
+        OmsBacktestAdapter wide = new OmsBacktestAdapter(oms, idlePrices(), clock);
         List<Intent> intents = new ArrayList<>();
         for (int i = 0; i < 150; i++) {
             int securityId = 1_000 + i;

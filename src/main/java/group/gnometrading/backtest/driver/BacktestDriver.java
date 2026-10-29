@@ -6,7 +6,7 @@ import group.gnometrading.data.MissingData;
 import group.gnometrading.data.MissingStretch;
 import group.gnometrading.data.StreamEntry;
 import group.gnometrading.md.StreamDirectory;
-import group.gnometrading.oms.pnl.PriceWriterAgent;
+import group.gnometrading.oms.pnl.PriceWriter;
 import group.gnometrading.schemas.Intent;
 import group.gnometrading.schemas.IntentDecoder;
 import group.gnometrading.schemas.OrderExecutionReport;
@@ -71,7 +71,7 @@ public final class BacktestDriver {
     // Map of exchangeId -> (securityId -> SimulatedExchange)
     private final Map<Integer, Map<Integer, SimulatedExchange>> exchanges;
     private final OmsBacktestAdapter adapter;
-    private final PriceWriterAgent priceWriter;
+    private final PriceWriter priceWriter;
     // The price writer's own copy of the market data, written on arrival rather than when the strategy is free.
     private final SequencedRingBuffer<?> priceFeed;
     private final S3Client s3Client;
@@ -120,7 +120,7 @@ public final class BacktestDriver {
             Map<Integer, Map<Integer, SimulatedExchange>> exchanges,
             Map<SimulatedExchange, MarketDataArrival> marketDataArrivals,
             OmsBacktestAdapter adapter,
-            PriceWriterAgent priceWriter,
+            PriceWriter priceWriter,
             SequencedRingBuffer<?> priceFeed,
             S3Client s3Client,
             String bucket,
@@ -353,7 +353,7 @@ public final class BacktestDriver {
                     recorder.onMarketData(timestamp, schema);
                 }
                 priceFeed.publishRaw(schema.buffer, schema.templateId(), schema.totalMessageSize());
-                priceWriter.doWork();
+                priceWriter.poll();
                 deliverToStrategy(timestamp, new Arrival(List.of(schema), false));
             }
             case LOCAL_MESSAGE -> {

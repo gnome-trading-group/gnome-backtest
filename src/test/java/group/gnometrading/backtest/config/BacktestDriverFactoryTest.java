@@ -19,12 +19,16 @@ import group.gnometrading.collections.IntToIntHashMap;
 import group.gnometrading.data.StreamEntry;
 import group.gnometrading.md.Stream;
 import group.gnometrading.md.StreamDirectory;
+import group.gnometrading.oms.pnl.PriceWriter;
 import group.gnometrading.schemas.Intent;
 import group.gnometrading.schemas.IntentDecoder;
+import group.gnometrading.schemas.Mbp10Schema;
 import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.RecordType;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.Statics;
+import group.gnometrading.sequencer.GlobalSequence;
+import group.gnometrading.sequencer.SequencedRingBuffer;
 import group.gnometrading.simulation.config.LatencyConfig;
 import group.gnometrading.simulation.config.QueueModelConfig;
 import group.gnometrading.simulation.config.SimulationOverrides;
@@ -194,7 +198,9 @@ class BacktestDriverFactoryTest {
     void marketOrderIsValuedFromTheBacktestPriceBuffer() throws Exception {
         BacktestContext context = BacktestDriverFactory.buildContext(config);
         OmsBacktestAdapter adapter = new OmsBacktestAdapter(
-                BacktestDriverFactory.buildOms(config, securityMaster, null, context), context.clock());
+                BacktestDriverFactory.buildOms(config, securityMaster, null, context),
+                idlePrices(context),
+                context.clock());
         context.priceBuffer().writeQuote(context.priceRegistry().getSlot(LISTING_ID), DOLLAR / 10, DOLLAR / 4);
 
         // 4 at the $0.25 ask meets the $1 minimum; without the buffer the OMS had no price and rejected it.
@@ -265,10 +271,21 @@ class BacktestDriverFactoryTest {
                 () -> BacktestDriverFactory.buildOms(config, securityMaster, null, context));
     }
 
+    /** A writer with nothing to read: these tests write the price buffer by hand. */
+    private static PriceWriter idlePrices(final BacktestContext context) {
+        return new PriceWriter(
+                context.priceBuffer(),
+                context.priceRegistry(),
+                new StreamDirectory(),
+                new SequencedRingBuffer<>(Mbp10Schema::new, new GlobalSequence()));
+    }
+
     private OmsBacktestAdapter quotedAdapter(RegistryConnection registry) {
         BacktestContext context = BacktestDriverFactory.buildContext(config);
         OmsBacktestAdapter adapter = new OmsBacktestAdapter(
-                BacktestDriverFactory.buildOms(config, securityMaster, registry, context), context.clock());
+                BacktestDriverFactory.buildOms(config, securityMaster, registry, context),
+                idlePrices(context),
+                context.clock());
         context.priceBuffer().writeQuote(context.priceRegistry().getSlot(LISTING_ID), DOLLAR / 10, DOLLAR / 4);
         return adapter;
     }

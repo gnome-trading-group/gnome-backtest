@@ -7,6 +7,7 @@ import group.gnometrading.md.StreamDirectory;
 import group.gnometrading.schemas.CancelOrder;
 import group.gnometrading.schemas.ExecType;
 import group.gnometrading.schemas.Intent;
+import group.gnometrading.schemas.Liquidity;
 import group.gnometrading.schemas.Mbp10Schema;
 import group.gnometrading.schemas.ModifyOrder;
 import group.gnometrading.schemas.Order;
@@ -265,6 +266,35 @@ class BacktestRecorderTest {
 
         assertEquals(1, recorder.getOrderRecordCount());
         assertEquals(1, recorder.getFillRecordCount());
+    }
+
+    @Test
+    void fillsSayWhetherTheyMadeOrTookLiquidity() {
+        recorder.onOrderSubmitted(1000L, makeLimitOrder(1, 100, 10_000_000L, 200L, Side.Bid, 1L));
+        OrderExecutionReport made = makeExecReport(
+                1, 100, ExecType.PARTIAL_FILL, OrderStatus.PARTIALLY_FILLED, 10_000_000L, 100, 100, 100, 0, 1L);
+        made.encoder.liquidity(Liquidity.MAKER);
+        recorder.onExecution(1001L, made, 0, Side.Bid);
+        OrderExecutionReport took =
+                makeExecReport(1, 100, ExecType.FILL, OrderStatus.FILLED, 10_000_000L, 100, 200, 0, 0, 1L);
+        took.encoder.liquidity(Liquidity.TAKER);
+        recorder.onExecution(1002L, took, 0, Side.Bid);
+        recorder.onExecution(
+                1003L,
+                makeExecReport(1, 100, ExecType.FILL, OrderStatus.FILLED, 10_000_000L, 1, 1, 0, 0, 2L),
+                0,
+                Side.Bid);
+
+        RecordBuffer fills = recorder.getFillRecords();
+        byte[] liquidity = null;
+        for (ColumnDef column : fills.getColumns()) {
+            if (column.name().equals("liquidity")) {
+                liquidity = fills.getByteColumn(column.columnIndex());
+            }
+        }
+        assertEquals(1, liquidity[0]);
+        assertEquals(2, liquidity[1]);
+        assertEquals(0, liquidity[2]);
     }
 
     @Test

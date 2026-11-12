@@ -59,6 +59,13 @@ public class BacktestConfig {
     public long seed = DEFAULT_SEED;
     /** What the run does where collection says its market data is missing. */
     public OnMissing onMissing = OnMissing.MARK;
+    /**
+     * Estimates the venue liquidity rewards the run's resting orders earn, for listings whose venue runs a program
+     * the simulation can score (Kalshi's), as the registry knew the programs at {@code simulationAsOf}.
+     */
+    public boolean rewards = true;
+    /** How often, in simulated seconds, the recorder snapshots what the rewards have accrued. */
+    public long rewardsSnapshotSeconds = 3600;
 
     public static BacktestConfig fromYaml(Path path) throws IOException {
         ObjectMapper mapper = new ObjectMapper(new YAMLFactory())

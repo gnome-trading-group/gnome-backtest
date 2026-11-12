@@ -7,6 +7,7 @@ import group.gnometrading.backtest.driver.MarketDataArrival;
 import group.gnometrading.backtest.driver.SimulatedClock;
 import group.gnometrading.backtest.oms.OmsBacktestAdapter;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
+import group.gnometrading.backtest.rewards.BacktestRewards;
 import group.gnometrading.data.MarketDataApi;
 import group.gnometrading.data.MissingData;
 import group.gnometrading.data.StreamEntry;
@@ -33,8 +34,10 @@ import group.gnometrading.simulation.config.ExchangeSimulationConfig;
 import group.gnometrading.simulation.config.SimulationResolver;
 import group.gnometrading.simulation.exchange.SimulatedExchange;
 import group.gnometrading.simulation.latency.LatencySeeds;
+import group.gnometrading.simulation.rewards.TickSize;
 import group.gnometrading.sm.Listing;
 import group.gnometrading.sm.ListingSpec;
+import group.gnometrading.sm.incentive.IncentiveTimeline;
 import group.gnometrading.strategies.StrategyAgent;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -124,6 +127,9 @@ public final class BacktestDriverFactory {
                 bucket,
                 recorder,
                 config.measureProcessingTime);
+        if (config.rewards) {
+            driver.setRewards(buildRewards(config, securityMaster, resolved, recorder));
+        }
         if (marketDataApi != null) {
             applyMissing(
                     config,
@@ -133,6 +139,37 @@ public final class BacktestDriverFactory {
             LOGGER.warning("No market-data API given: the run can't know where its data is missing");
         }
         return driver;
+    }
+
+    /**
+     * The rewards tracker for the listings whose venue runs a program the simulation scores, with the programs the
+     * registry knew at the run's as-of time; null when no listing has any.
+     */
+    static BacktestRewards buildRewards(
+            BacktestConfig config,
+            SecurityMaster securityMaster,
+            List<ResolvedListing> resolved,
+            BacktestRecorder recorder) {
+        BacktestRewards rewards = new BacktestRewards(recorder, config.rewardsSnapshotSeconds * 1_000_000_000L);
+        int bound = 0;
+        for (ResolvedListing rl : resolved) {
+            int listingId = rl.listing.listingId();
+            IncentiveTimeline programs = securityMaster.getIncentiveTimeline(listingId, config.simulationAsOf);
+            ListingSpec current = securityMaster.getListingSpec(listingId);
+            TickSize tick = nanos -> {
+                ListingSpec spec = securityMaster.getListingSpec(listingId, nanos);
+                return (spec != null ? spec : current).tickSize();
+            };
+            if (rewards.bind(rl.listing, programs, tick)) {
+                bound++;
+            }
+        }
+        LOGGER.info(String.format("Rewards: scoring %d of %d listings", bound, resolved.size()));
+        if (rewards.isEmpty()) {
+            return null;
+        }
+        rewards.begin(nanos(config.startDate));
+        return rewards;
     }
 
     /** Reports where data is missing, and marks it or refuses the run as the config says. */

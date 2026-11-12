@@ -8,6 +8,7 @@ import group.gnometrading.schemas.CancelOrder;
 import group.gnometrading.schemas.ExecType;
 import group.gnometrading.schemas.Intent;
 import group.gnometrading.schemas.IntentDecoder;
+import group.gnometrading.schemas.Liquidity;
 import group.gnometrading.schemas.MboSchema;
 import group.gnometrading.schemas.Mbp10Schema;
 import group.gnometrading.schemas.Mbp1Schema;
@@ -25,6 +26,7 @@ import group.gnometrading.schemas.StreamRecord;
 import group.gnometrading.schemas.TradesSchema;
 import group.gnometrading.sequencer.metrics.ColumnarMetricRecorder;
 import group.gnometrading.sequencer.metrics.RecordBuffer;
+import group.gnometrading.simulation.rewards.RewardAccrual;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -37,8 +39,8 @@ import java.util.Map;
 /**
  * Columnar in-memory recorder for backtest events.
  *
- * <p>All data is stored in {@link RecordBuffer} instances — one per event stream. The four
- * built-in streams (market, orders, fills, intents) are created and frozen at construction time.
+ * <p>All data is stored in {@link RecordBuffer} instances — one per event stream. The built-in streams (market,
+ * orders, fills, intents, rewards) are created and frozen at construction time.
  * Strategies add custom streams through the {@link ColumnarMetricRecorder} {@link #createMetricRecorder} gives each
  * of them.
  *
@@ -49,8 +51,10 @@ import java.util.Map;
  *   <li><b>orders</b> — one row per order at terminal state (FILLED, CANCELLED, REJECTED, EXPIRED),
  *       with accumulated fill aggregates.
  *   <li><b>fills</b> — one row per fill event (PARTIAL_FILL or FILL), annotated with BBO at fill
- *       time for slippage analysis.
+ *       time for slippage analysis, and whether the fill made or took liquidity.
  *   <li><b>intents</b> — one row per strategy intent published to the OMS.
+ *   <li><b>rewards</b> — estimated venue liquidity rewards: what each listing's programs have accrued, cumulative,
+ *       at each snapshot.
  * </ol>
  */
 public final class BacktestRecorder {
@@ -62,6 +66,10 @@ public final class BacktestRecorder {
     private static final int INITIAL_ORDER_CAPACITY = 10_000;
     private static final int INITIAL_FILL_CAPACITY = 50_000;
     private static final int INITIAL_INTENT_CAPACITY = 1_000_000;
+    private static final int INITIAL_REWARD_CAPACITY = 1_024;
+    private static final byte LIQUIDITY_UNKNOWN = 0;
+    private static final byte LIQUIDITY_MAKER = 1;
+    private static final byte LIQUIDITY_TAKER = 2;
 
     private final int recordDepth;
 
@@ -73,6 +81,7 @@ public final class BacktestRecorder {
     private final RecordBuffer orderRecords;
     private final RecordBuffer fillRecords;
     private final RecordBuffer intentRecords;
+    private final RecordBuffer rewardRecords;
     private final List<ColumnarMetricRecorder> metricRecorders = new ArrayList<>();
 
     // -------------------------------------------------------------------------
@@ -132,6 +141,24 @@ public final class BacktestRecorder {
     private final int filFee;
     private final int filBookBidPrice;
     private final int filBookAskPrice;
+    private final int filLiquidity;
+
+    // Reward column indices
+    private final int rewTimestamp;
+    private final int rewListingId;
+    private final int rewVenueProgramId;
+    private final int rewMarket;
+    private final int rewPeriodStart;
+    private final int rewPeriodEnd;
+    private final int rewReward;
+    private final int rewGross;
+    private final int rewShareNanos;
+    private final int rewMarketGross;
+    private final int rewMarketPaid;
+    private final int rewCountingNanos;
+    private final int rewOneSidedNanos;
+    private final int rewDepthUnknownNanos;
+    private final int rewNoDataNanos;
 
     // -------------------------------------------------------------------------
     // Intent column indices
@@ -301,8 +328,29 @@ public final class BacktestRecorder {
         filFee = fil.addDoubleColumn("fee");
         filBookBidPrice = fil.addLongColumn("book_bid_price");
         filBookAskPrice = fil.addLongColumn("book_ask_price");
+        filLiquidity = fil.addByteColumn("liquidity");
         fil.freeze();
         fillRecords = fil;
+
+        // --- reward buffer ---
+        RecordBuffer rew = new RecordBuffer("rewards", INITIAL_REWARD_CAPACITY);
+        rewTimestamp = rew.addLongColumn("timestamp");
+        rewListingId = rew.addIntColumn("listing_id");
+        rewVenueProgramId = rew.addStringColumn("venue_program_id");
+        rewMarket = rew.addStringColumn("market");
+        rewPeriodStart = rew.addLongColumn("period_start");
+        rewPeriodEnd = rew.addLongColumn("period_end");
+        rewReward = rew.addLongColumn("program_reward");
+        rewGross = rew.addLongColumn("gross");
+        rewShareNanos = rew.addDoubleColumn("share_nanos");
+        rewMarketGross = rew.addLongColumn("market_gross");
+        rewMarketPaid = rew.addLongColumn("market_paid");
+        rewCountingNanos = rew.addLongColumn("counting_nanos");
+        rewOneSidedNanos = rew.addLongColumn("one_sided_nanos");
+        rewDepthUnknownNanos = rew.addLongColumn("depth_unknown_nanos");
+        rewNoDataNanos = rew.addLongColumn("no_data_nanos");
+        rew.freeze();
+        rewardRecords = rew;
 
         // --- intent buffer ---
         RecordBuffer intent = new RecordBuffer("intents", INITIAL_INTENT_CAPACITY);
@@ -486,6 +534,10 @@ public final class BacktestRecorder {
         return intentRecords;
     }
 
+    public RecordBuffer getRewardRecords() {
+        return rewardRecords;
+    }
+
     public List<RecordBuffer> getCustomBuffers() {
         List<RecordBuffer> buffers = new ArrayList<>();
         for (ColumnarMetricRecorder metricRecorder : metricRecorders) {
@@ -597,6 +649,43 @@ public final class BacktestRecorder {
             fillRecords.setLong(idx, filBookBidPrice, bbo[0]);
             fillRecords.setLong(idx, filBookAskPrice, bbo[1]);
         }
+        fillRecords.setByte(idx, filLiquidity, encodeLiquidity(report.decoder.liquidity()));
+    }
+
+    /**
+     * What a market's liquidity program has accrued at {@code timestamp}: one row for each of the market's listings in
+     * the run. {@code market_paid} is what the venue would pay the whole market at that gross once its period ends.
+     */
+    public void onRewards(long timestamp, RewardAccrual accrual) {
+        for (int slot = RewardAccrual.PLAIN; slot <= RewardAccrual.COMPLEMENT; slot++) {
+            int listingId = accrual.listingId(slot);
+            if (listingId < 0) {
+                continue;
+            }
+            int idx = rewardRecords.appendRow();
+            rewardRecords.setLong(idx, rewTimestamp, timestamp);
+            rewardRecords.setInt(idx, rewListingId, listingId);
+            rewardRecords.setString(idx, rewVenueProgramId, accrual.venueProgramId());
+            rewardRecords.setString(idx, rewMarket, accrual.marketKey());
+            rewardRecords.setLong(idx, rewPeriodStart, accrual.program().periodStartNanos());
+            rewardRecords.setLong(idx, rewPeriodEnd, accrual.program().periodEndNanos());
+            rewardRecords.setLong(idx, rewReward, accrual.program().reward());
+            rewardRecords.setLong(idx, rewGross, accrual.gross(slot));
+            rewardRecords.setDouble(idx, rewShareNanos, accrual.shareNanos(slot));
+            rewardRecords.setLong(idx, rewMarketGross, accrual.marketGross());
+            rewardRecords.setLong(idx, rewMarketPaid, accrual.marketPaid());
+            rewardRecords.setLong(idx, rewCountingNanos, accrual.countingNanos());
+            rewardRecords.setLong(idx, rewOneSidedNanos, accrual.oneSidedNanos());
+            rewardRecords.setLong(idx, rewDepthUnknownNanos, accrual.depthUnknownNanos());
+            rewardRecords.setLong(idx, rewNoDataNanos, accrual.noDataNanos());
+        }
+    }
+
+    private static byte encodeLiquidity(Liquidity liquidity) {
+        if (liquidity == Liquidity.MAKER) {
+            return LIQUIDITY_MAKER;
+        }
+        return liquidity == Liquidity.TAKER ? LIQUIDITY_TAKER : LIQUIDITY_UNKNOWN;
     }
 
     private void accumulateFill(long clientOid, OrderExecutionReport report) {
@@ -861,6 +950,7 @@ public final class BacktestRecorder {
         orderRecords.clear();
         fillRecords.clear();
         intentRecords.clear();
+        rewardRecords.clear();
         inFlight.clear();
         bboCache.clear();
     }

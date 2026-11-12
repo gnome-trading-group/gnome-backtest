@@ -2,6 +2,7 @@ package group.gnometrading.backtest.driver;
 
 import group.gnometrading.backtest.oms.OmsBacktestAdapter;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
+import group.gnometrading.backtest.rewards.BacktestRewards;
 import group.gnometrading.data.MissingData;
 import group.gnometrading.data.MissingStretch;
 import group.gnometrading.data.StreamEntry;
@@ -91,6 +92,7 @@ public final class BacktestDriver {
     private List<MissingData> missingData = List.of();
 
     private BacktestRecorder recorder;
+    private BacktestRewards rewards;
     private PriorityQueue<BacktestEvent> queue;
     private MarketDataStream stream;
     private long lastProcessedTimestamp = Long.MIN_VALUE;
@@ -195,6 +197,18 @@ public final class BacktestDriver {
             missingMarkers.add(new MissingDataMarker(streamId, stretch.fromNs()));
         }
         markedStreams.add(streamId);
+    }
+
+    /** Estimates the venue rewards the run's resting orders earn; null scores none. */
+    public void setRewards(BacktestRewards rewards) {
+        this.rewards = rewards;
+    }
+
+    /** Accrues rewards up to the run's end and records the final snapshot; nothing without rewards. */
+    public void finishRewards(long endNanos) {
+        if (rewards != null) {
+            rewards.finish(endNanos);
+        }
     }
 
     /** Where collection says the run's streams had no data, for its results. */
@@ -332,6 +346,9 @@ public final class BacktestDriver {
                     enqueue(recorded > timestamp ? recorded : timestamp, EventType.LOCAL_MARKET_DATA, schema);
                     return;
                 }
+                if (rewards != null) {
+                    rewards.onMarketData(timestamp, streams.listingId(schema.streamId()), schema);
+                }
                 Links link = links.get(exchange);
                 long received = link.marketDataArrival().arrival(schema, timestamp);
                 enqueue(link.marketData().arrival(received, 0), EventType.LOCAL_MARKET_DATA, schema);
@@ -391,6 +408,9 @@ public final class BacktestDriver {
     private void deliverReports(SimulatedExchange exchange, long eventTimestamp, List<OrderExecutionReport> reports) {
         NetworkChannel channel = links.get(exchange).reports();
         for (OrderExecutionReport report : reports) {
+            if (rewards != null) {
+                rewards.onReport(eventTimestamp, exchange, report);
+            }
             long deliveryTs = channel.arrival(eventTimestamp, exchange.simulateNetworkLatency());
             report.encoder.timestampEvent(eventTimestamp).timestampRecv(deliveryTs);
             enqueue(deliveryTs, EventType.EXCHANGE_MESSAGE, report);

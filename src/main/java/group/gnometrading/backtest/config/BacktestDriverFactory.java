@@ -105,7 +105,8 @@ public final class BacktestDriverFactory {
         List<StreamEntry> entries = buildEntries(config, tradedListingIds, streams);
         // Its own feed rather than the strategy's buffer, written before the strategy sees each record: the OMS then
         // prices against exactly the books the strategy had seen, as it does live.
-        SequencedRingBuffer<Mbp10Schema> priceFeed = new SequencedRingBuffer<>(Mbp10Schema::new, new GlobalSequence());
+        SequencedRingBuffer<Mbp10Schema> priceFeed = new SequencedRingBuffer<>(
+                Mbp10Schema::new, new GlobalSequence(), SequencedRingBuffer.DEFAULT_SIZE, context.clock());
         PriceWriter priceWriter = new PriceWriter(context.priceBuffer(), context.priceRegistry(), streams, priceFeed);
         OmsBacktestAdapter adapter = new OmsBacktestAdapter(oms, priceWriter, context.clock(), recorder);
 

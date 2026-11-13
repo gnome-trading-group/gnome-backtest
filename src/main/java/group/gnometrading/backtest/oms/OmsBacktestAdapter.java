@@ -79,12 +79,15 @@ public final class OmsBacktestAdapter {
         this.clock = clock;
         this.recorder = recorder;
 
+        // Stamped with simulated time, as the OMS stamps everything else.
         GlobalSequence globalSequence = new GlobalSequence();
-        this.intentBuffer = new SequencedRingBuffer<>(Intent::new, globalSequence);
-        this.execReportBuffer = new SequencedRingBuffer<>(OrderExecutionReport::new, globalSequence);
-        this.orderOutboundBuffer = new SequencedRingBuffer<>(Intent::new, globalSequence, OUTBOUND_BUFFER_SIZE);
+        this.intentBuffer =
+                new SequencedRingBuffer<>(Intent::new, globalSequence, SequencedRingBuffer.DEFAULT_SIZE, clock);
+        this.execReportBuffer = new SequencedRingBuffer<>(
+                OrderExecutionReport::new, globalSequence, SequencedRingBuffer.DEFAULT_SIZE, clock);
+        this.orderOutboundBuffer = new SequencedRingBuffer<>(Intent::new, globalSequence, OUTBOUND_BUFFER_SIZE, clock);
         this.strategyExecReportBuffer =
-                new SequencedRingBuffer<>(OrderExecutionReport::new, globalSequence, OUTBOUND_BUFFER_SIZE);
+                new SequencedRingBuffer<>(OrderExecutionReport::new, globalSequence, OUTBOUND_BUFFER_SIZE, clock);
 
         this.omsAgent = new OmsAgent(
                 oms, intentBuffer, execReportBuffer, orderOutboundBuffer, strategyExecReportBuffer, priceWriter, clock);

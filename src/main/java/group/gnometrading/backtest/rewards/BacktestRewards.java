@@ -17,8 +17,10 @@ import group.gnometrading.sm.incentive.IncentiveProgram;
 import group.gnometrading.sm.incentive.IncentiveTimeline;
 import java.util.EnumSet;
 import java.util.Set;
+import org.agrona.collections.Int2ObjectHashMap;
 import org.agrona.collections.IntHashSet;
 import org.agrona.collections.Long2LongHashMap;
+import org.agrona.collections.LongHashSet;
 
 /**
  * Estimates the venue liquidity rewards a backtest's resting orders earn. The driver hands it the exchange-side books
@@ -36,6 +38,8 @@ public final class BacktestRewards {
     private final RewardScorer scorer = new RewardScorer(RewardScorer.Mode.INSERT_OURS, ORDERS_PER_MARKET, ORDERS);
     private final Long2LongHashMap listingsByInstrument = new Long2LongHashMap(NONE);
     private final IntHashSet bound = new IntHashSet();
+    // Our orders resting on each bound listing, so a change to its book can say where they now stand.
+    private final Int2ObjectHashMap<LongHashSet> restingByListing = new Int2ObjectHashMap<>();
     private final BacktestRecorder recorder;
     private final long snapshotIntervalNanos;
     private long nextSnapshot = Long.MIN_VALUE;
@@ -63,6 +67,7 @@ public final class BacktestRewards {
         this.listingsByInstrument.put(
                 instrument(listing.exchange().exchangeId(), listing.security().securityId()), listing.listingId());
         this.bound.add(listing.listingId());
+        this.restingByListing.put(listing.listingId(), new LongHashSet(ORDERS_PER_MARKET));
         return true;
     }
 
@@ -108,8 +113,10 @@ public final class BacktestRewards {
         }
         final long clientOid = report.getClientOidCounter();
         final LocalOrder resting = exchange.restingOrder(clientOid);
+        final LongHashSet onListing = this.restingByListing.get((int) listingId);
         if (resting == null) {
             this.scorer.onOrder((int) listingId, clientOid, false, 0, 0, timestamp);
+            onListing.remove(clientOid);
         } else {
             this.scorer.onOrder(
                     (int) listingId,
@@ -118,6 +125,27 @@ public final class BacktestRewards {
                     resting.order.decoder.price(),
                     resting.remaining,
                     timestamp);
+            this.scorer.onQueueAhead(clientOid, resting.phantomVolume, timestamp);
+            onListing.add(clientOid);
+        }
+    }
+
+    /**
+     * Where each of our resting orders on the listing now stands in its level's queue, after the exchange applied a
+     * record of the listing's market data: everyone else's size ahead of it, as the exchange's queue model tracks it.
+     */
+    public void onQueue(final long timestamp, final int listingId, final SimulatedExchange exchange) {
+        final LongHashSet resting = this.restingByListing.get(listingId);
+        if (resting == null || resting.isEmpty()) {
+            return;
+        }
+        final LongHashSet.LongIterator it = resting.iterator();
+        while (it.hasNext()) {
+            final long clientOid = it.nextValue();
+            final LocalOrder order = exchange.restingOrder(clientOid);
+            if (order != null) {
+                this.scorer.onQueueAhead(clientOid, order.phantomVolume, timestamp);
+            }
         }
     }
 

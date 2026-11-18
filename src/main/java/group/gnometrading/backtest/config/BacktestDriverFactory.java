@@ -1,5 +1,8 @@
 package group.gnometrading.backtest.config;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import group.gnometrading.RegistryConnection;
 import group.gnometrading.SecurityMaster;
 import group.gnometrading.backtest.driver.BacktestDriver;
@@ -30,6 +33,7 @@ import group.gnometrading.schemas.Mbp10Schema;
 import group.gnometrading.schemas.RecordType;
 import group.gnometrading.sequencer.GlobalSequence;
 import group.gnometrading.sequencer.SequencedRingBuffer;
+import group.gnometrading.simulation.book.venues.Complements;
 import group.gnometrading.simulation.config.ExchangeSimulationConfig;
 import group.gnometrading.simulation.config.SimulationResolver;
 import group.gnometrading.simulation.exchange.SimulatedExchange;
@@ -56,6 +60,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 public final class BacktestDriverFactory {
 
     private static final Logger LOGGER = Logger.getLogger(BacktestDriverFactory.class.getName());
+    private static final ObjectMapper METADATA_JSON = new ObjectMapper();
 
     /** The book record the simulated exchanges match against. */
     private static final RecordType SIMULATED_BOOK_RECORD = RecordType.MBP_10;
@@ -128,6 +133,7 @@ public final class BacktestDriverFactory {
                 bucket,
                 recorder,
                 config.measureProcessingTime);
+        driver.setComplements(complementPairs(config, resolved));
         if (config.rewards) {
             driver.setRewards(buildRewards(config, securityMaster, resolved, recorder));
         }
@@ -173,6 +179,39 @@ public final class BacktestDriverFactory {
         return rewards;
     }
 
+    /**
+     * Each traded listing whose venue matches the two outcomes of a market against each other, to the other outcome's
+     * listing when the run trades both: a print on either reaches the other's book. A listing whose other outcome the
+     * run doesn't trade, or that doesn't say which market it's in, reads only its own prints.
+     */
+    static Map<Integer, Integer> complementPairs(BacktestConfig config, List<ResolvedListing> resolved) {
+        Map<Integer, Integer> pairs = new HashMap<>();
+        if (!config.complementFills) {
+            return pairs;
+        }
+        Map<String, List<Integer>> byMarket = new LinkedHashMap<>();
+        for (ResolvedListing rl : resolved) {
+            String key = Complements.pairKey(rl.listing);
+            if (key != null) {
+                byMarket.computeIfAbsent(key, k -> new ArrayList<>()).add(rl.listing.listingId());
+            }
+        }
+        List<Integer> unpaired = new ArrayList<>();
+        for (List<Integer> listings : byMarket.values()) {
+            if (listings.size() == 2) {
+                pairs.put(listings.get(0), listings.get(1));
+                pairs.put(listings.get(1), listings.get(0));
+            } else {
+                unpaired.addAll(listings);
+            }
+        }
+        if (!unpaired.isEmpty()) {
+            LOGGER.warning("Listings " + unpaired + " trade with another outcome the run doesn't have; their bids and "
+                    + "asks miss the fills that outcome's prints would give them");
+        }
+        return pairs;
+    }
+
     /** Reports where data is missing, and marks it or refuses the run as the config says. */
     static void applyMissing(BacktestConfig config, BacktestDriver driver, List<MissingData> missing) {
         driver.reportMissingData(missing);
@@ -202,6 +241,22 @@ public final class BacktestDriverFactory {
     private static long nanos(LocalDateTime utc) {
         Instant instant = utc.toInstant(ZoneOffset.UTC);
         return instant.getEpochSecond() * 1_000_000_000L + instant.getNano();
+    }
+
+    /**
+     * The security master a run's OMS, strategy and simulator all read through. Its fee and incentive reads answer as
+     * the registry knew them at the run's {@code simulation_as_of} (now when unset, fixed here so every reader agrees),
+     * so a strategy prices with the same fees the simulator charges.
+     */
+    public static SecurityMaster buildSecurityMaster(BacktestConfig config, RegistryConnection registry) {
+        pinSimulationAsOf(config);
+        return new SecurityMaster(registry, config.simulationAsOf);
+    }
+
+    private static void pinSimulationAsOf(BacktestConfig config) {
+        if (config.simulationAsOf == null) {
+            config.simulationAsOf = Instant.now().toString();
+        }
     }
 
     /**
@@ -283,9 +338,7 @@ public final class BacktestDriverFactory {
      * config's overrides for the exchange, then the listing's own.
      */
     private static List<ResolvedListing> resolveListings(BacktestConfig config, SecurityMaster securityMaster) {
-        if (config.simulationAsOf == null) {
-            config.simulationAsOf = Instant.now().toString();
-        }
+        pinSimulationAsOf(config);
         SimulationResolver resolver = new SimulationResolver(securityMaster, config.simulationAsOf);
         List<ResolvedListing> result = new ArrayList<>();
         // A misspelt code would otherwise leave its exchange simulating with the registry's parameters, silently. A
@@ -310,18 +363,45 @@ public final class BacktestDriverFactory {
             }
             ExchangeSimulationConfig simulation = resolver.resolve(
                     listing, true, config.exchanges.get(listing.exchange().exchangeCode()), lsc.overrides);
+            if (!config.complementFills) {
+                simulation = simulation.withoutSweepingPrints();
+            }
             result.add(new ResolvedListing(listing, simulation));
         }
         return result;
     }
 
-    /** Each listing's resolved simulation, as {@code listingId -> JSON}, for the run's metadata. */
+    /**
+     * Each listing's resolved simulation, as {@code listingId -> JSON}, for the run's metadata. A listing whose venue
+     * pairs the outcomes of a market also names the other outcome's listing its prints come from, or null when the run
+     * doesn't trade it.
+     */
     public static Map<Integer, String> resolvedSimulation(BacktestConfig config, SecurityMaster securityMaster) {
+        List<ResolvedListing> resolved = resolveListings(config, securityMaster);
+        Map<Integer, Integer> pairs = complementPairs(config, resolved);
         Map<Integer, String> result = new LinkedHashMap<>();
-        for (ResolvedListing rl : resolveListings(config, securityMaster)) {
-            result.put(rl.listing.listingId(), rl.simulation.toJson());
+        for (ResolvedListing rl : resolved) {
+            String json = rl.simulation.toJson();
+            if (config.complementFills && Complements.pairKey(rl.listing) != null) {
+                json = withComplement(json, pairs.get(rl.listing.listingId()));
+            }
+            result.put(rl.listing.listingId(), json);
         }
         return result;
+    }
+
+    private static String withComplement(String json, Integer complement) {
+        try {
+            ObjectNode node = (ObjectNode) METADATA_JSON.readTree(json);
+            if (complement == null) {
+                node.putNull("complement_listing");
+            } else {
+                node.put("complement_listing", complement.intValue());
+            }
+            return METADATA_JSON.writeValueAsString(node);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /** Builds each listing's exchange, and records in {@code marketDataArrivals} when its market data reaches us. */
@@ -377,5 +457,5 @@ public final class BacktestDriverFactory {
         return entries;
     }
 
-    private record ResolvedListing(Listing listing, ExchangeSimulationConfig simulation) {}
+    record ResolvedListing(Listing listing, ExchangeSimulationConfig simulation) {}
 }

@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import group.gnometrading.backtest.recorder.BacktestRecorder;
 import group.gnometrading.schemas.CancelOrder;
 import group.gnometrading.schemas.Mbp10Schema;
+import group.gnometrading.schemas.ModifyOrder;
 import group.gnometrading.schemas.Order;
 import group.gnometrading.schemas.OrderExecutionReport;
 import group.gnometrading.schemas.OrderType;
@@ -104,17 +105,23 @@ class BacktestRewardsTest {
         rewards.begin(T0);
     }
 
-    /** A book with one level a side; a side of null price is empty. */
+    /** A book with one level a side of everyone else's 2,000; a side of null price is empty. */
     private void book(final long at, final long bidCents, final long askCents, final boolean bad) {
+        book(at, bidCents, askCents, bad, 2000);
+    }
+
+    /** As the driver hands a record over: to the scorer, to the exchange, then where our orders now stand. */
+    private void book(
+            final long at, final long bidCents, final long askCents, final boolean bad, final long contracts) {
         final Mbp10Schema schema = new Mbp10Schema();
         final long nullPrice = Mbp10Decoder.priceNullValue();
         final long nullSize = Mbp10Decoder.sizeNullValue();
         schema.encoder.timestampEvent(at).action(Action.Add).price(nullPrice).size(nullSize);
         schema.encoder
                 .bidPrice0(bidCents < 0 ? nullPrice : bidCents * CENT)
-                .bidSize0(bidCents < 0 ? nullSize : 2000 * CONTRACT)
+                .bidSize0(bidCents < 0 ? nullSize : contracts * CONTRACT)
                 .askPrice0(askCents < 0 ? nullPrice : askCents * CENT)
-                .askSize0(askCents < 0 ? nullSize : 2000 * CONTRACT);
+                .askSize0(askCents < 0 ? nullSize : contracts * CONTRACT);
         schema.encoder
                 .bidPrice1(nullPrice)
                 .bidSize1(nullSize)
@@ -162,7 +169,9 @@ class BacktestRewardsTest {
                 .askSize9(nullSize);
         schema.encoder.flags().clear().badData(bad);
         rewards.onMarketData(at, LISTING_ID, schema);
-        report(at, exchange.onMarketData(schema));
+        final List<OrderExecutionReport> reports = exchange.onMarketData(schema);
+        rewards.onQueue(at, LISTING_ID, exchange);
+        report(at, reports);
     }
 
     private void report(final long at, final List<OrderExecutionReport> reports) {
@@ -183,6 +192,19 @@ class BacktestRewardsTest {
                 .timeInForce(TimeInForce.GOOD_TILL_CANCELED);
         order.encodeClientOid(clientOid, 0);
         final List<OrderExecutionReport> reports = new ArrayList<>(exchange.submitOrder(order, at));
+        reports.addAll(exchange.processDue(at));
+        report(at, reports);
+    }
+
+    private void modify(final long at, final long clientOid, final long cents, final long contracts) {
+        final ModifyOrder modify = new ModifyOrder();
+        modify.encoder
+                .exchangeId((short) EXCHANGE_ID)
+                .securityId(SECURITY_ID)
+                .price(cents * CENT)
+                .size(contracts * CONTRACT);
+        modify.encodeClientOid(clientOid, 0);
+        final List<OrderExecutionReport> reports = new ArrayList<>(exchange.modifyOrder(modify, at));
         reports.addAll(exchange.processDue(at));
         report(at, reports);
     }
@@ -225,6 +247,54 @@ class BacktestRewardsTest {
         assertEquals(16 * DOLLAR, last("market_paid"));
         assertEquals(8000 * SECOND, last("counting_nanos"));
         assertEquals(LISTING_ID, last("listing_id"));
+    }
+
+    @Test
+    void joiningBehindMoreThanTheTargetEarnsOnlyUnderTheLevelReading() {
+        bindYes();
+        book(T0, 50, 52, false);
+        submit(T0, 1, Side.Bid, 50, 500);
+        submit(T0, 2, Side.Ask, 52, 500);
+        rewards.finish(T0 + PERIOD);
+
+        // Level: 500 of each side's 2,500. Queue: the 2,000 ahead fill the 1,000 the target needs.
+        assertEquals(20 * DOLLAR, last("gross"), 1);
+        assertEquals(0, last("gross_queue"));
+        assertEquals(0, last("market_gross_queue"));
+        assertEquals(0, last("market_paid_queue"));
+    }
+
+    @Test
+    void cancelsAheadMoveAnOrderIntoTheSizeTheQueueReadingCounts() {
+        bindYes();
+        book(T0, 50, 52, false);
+        submit(T0, 1, Side.Bid, 50, 500);
+        submit(T0, 2, Side.Ask, 52, 500);
+        // The optimistic queue model takes the 1,500 cancelled from each level as ahead of us: 500 stay ahead.
+        book(T0 + 5000 * SECOND, 50, 52, false, 500);
+        rewards.finish(T0 + PERIOD);
+
+        // $25 a side per half. Level: 20% then 50% a side. Queue: nothing, then our 500 of the first 1,000.
+        assertEquals(35 * DOLLAR, last("gross"), 1);
+        assertEquals(25 * DOLLAR, last("gross_queue"), 1);
+        assertEquals(last("market_gross_queue") / CENT * CENT, last("market_paid_queue"));
+    }
+
+    @Test
+    void growingAnOrderSendsItToTheBackOfTheQueue() {
+        bindYes();
+        book(T0, 50, 52, false);
+        submit(T0, 1, Side.Bid, 50, 500);
+        submit(T0, 2, Side.Ask, 52, 500);
+        // Cancels ahead leave 500 in front of each; then others join behind us.
+        book(T0 + 2500 * SECOND, 50, 52, false, 500);
+        book(T0 + 5000 * SECOND, 50, 52, false, 2000);
+        modify(T0 + 5000 * SECOND, 1, 50, 600);
+        rewards.finish(T0 + PERIOD);
+
+        // $50 a side over the period. Queue: nothing for a quarter, then our 500 of the first 1,000 a side for a
+        // quarter, then only the ask's, the bigger bid having rejoined behind everyone else's 2,000.
+        assertEquals(25 * DOLLAR, last("gross_queue"), 1);
     }
 
     @Test

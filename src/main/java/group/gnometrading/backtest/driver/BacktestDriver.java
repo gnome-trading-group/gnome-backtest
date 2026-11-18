@@ -10,8 +10,11 @@ import group.gnometrading.md.StreamDirectory;
 import group.gnometrading.oms.pnl.PriceWriter;
 import group.gnometrading.schemas.Intent;
 import group.gnometrading.schemas.IntentDecoder;
+import group.gnometrading.schemas.Mbp10Schema;
+import group.gnometrading.schemas.Mbp1Schema;
 import group.gnometrading.schemas.OrderExecutionReport;
 import group.gnometrading.schemas.StreamRecord;
+import group.gnometrading.schemas.book.Action;
 import group.gnometrading.sequencer.SequencedPoller;
 import group.gnometrading.sequencer.SequencedRingBuffer;
 import group.gnometrading.sequencer.metrics.MetricRecorder;
@@ -64,6 +67,9 @@ public final class BacktestDriver {
 
     private final List<StreamEntry> entries;
     private final Map<SimulatedExchange, Links> links = new IdentityHashMap<>();
+    // A listing's exchange to the exchange of the other outcome of its market, on venues that match the two against
+    // each other but print the trade once: each print also reaches the other book.
+    private final Map<SimulatedExchange, Complement> complements = new IdentityHashMap<>();
     // What has reached the strategy but not been handled yet, one entry per arrival.
     private final ArrayDeque<Arrival> strategyInbox = new ArrayDeque<>();
     private final StrategyAgent strategy;
@@ -197,6 +203,21 @@ public final class BacktestDriver {
             missingMarkers.add(new MissingDataMarker(streamId, stretch.fromNs()));
         }
         markedStreams.add(streamId);
+    }
+
+    /** Pairs each listing with its other outcome's, by listing id, both ways; the run must simulate every one. */
+    public void setComplements(Map<Integer, Integer> listingPairs) {
+        Map<SimulatedExchange, Complement> pairs = new IdentityHashMap<>();
+        for (Map.Entry<Integer, Integer> pair : listingPairs.entrySet()) {
+            SimulatedExchange exchange = exchangeOf(pair.getKey());
+            SimulatedExchange other = exchangeOf(pair.getValue());
+            if (exchange == null || other == null) {
+                throw new IllegalArgumentException("A complement pair names a listing the run doesn't simulate");
+            }
+            pairs.put(exchange, new Complement(other, pair.getValue()));
+        }
+        complements.clear();
+        complements.putAll(pairs);
     }
 
     /** Estimates the venue rewards the run's resting orders earn; null scores none. */
@@ -352,7 +373,20 @@ public final class BacktestDriver {
                 Links link = links.get(exchange);
                 long received = link.marketDataArrival().arrival(schema, timestamp);
                 enqueue(link.marketData().arrival(received, 0), EventType.LOCAL_MARKET_DATA, schema);
-                deliverReports(exchange, timestamp, exchange.onMarketData(schema));
+                List<OrderExecutionReport> reports = exchange.onMarketData(schema);
+                if (rewards != null) {
+                    rewards.onQueue(timestamp, streams.listingId(schema.streamId()), exchange);
+                }
+                deliverReports(exchange, timestamp, reports);
+                Complement complement = complements.get(exchange);
+                if (complement != null && isTrade(schema)) {
+                    List<OrderExecutionReport> complementReports =
+                            complement.exchange().onComplementTrade(schema);
+                    if (rewards != null) {
+                        rewards.onQueue(timestamp, complement.listingId(), complement.exchange());
+                    }
+                    deliverReports(complement.exchange(), timestamp, complementReports);
+                }
             }
             case EXCHANGE_MESSAGE -> {
                 OrderExecutionReport report = (OrderExecutionReport) event.data();
@@ -531,9 +565,21 @@ public final class BacktestDriver {
         return schema;
     }
 
+    private static boolean isTrade(StreamRecord schema) {
+        if (schema instanceof Mbp10Schema mbp10) {
+            return mbp10.decoder.action() == Action.Trade;
+        }
+        return schema instanceof Mbp1Schema mbp1 && mbp1.decoder.action() == Action.Trade;
+    }
+
     /** The exchange simulating the listing a record's stream carries, or null for a stream of anything else. */
     private SimulatedExchange getExchange(StreamRecord schema) {
-        Listing listing = streams.listing(streams.listingId(schema.streamId()));
+        return exchangeOf(streams.listingId(schema.streamId()));
+    }
+
+    /** The exchange simulating a listing, or null when the run doesn't simulate it. */
+    private SimulatedExchange exchangeOf(int listingId) {
+        Listing listing = streams.listing(listingId);
         if (listing == null) {
             return null;
         }
@@ -545,4 +591,7 @@ public final class BacktestDriver {
     private SimulatedExchange getExchangeForMessage(LocalMessage message) {
         return exchanges.get(message.exchangeId()).get(message.securityId());
     }
+
+    /** The other outcome's exchange, and its listing for the rewards estimate. */
+    private record Complement(SimulatedExchange exchange, int listingId) {}
 }

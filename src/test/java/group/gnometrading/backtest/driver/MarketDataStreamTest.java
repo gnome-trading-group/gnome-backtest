@@ -48,6 +48,59 @@ class MarketDataStreamTest {
         }
     }
 
+    @Test
+    void minutesWithoutAFileAreNeverAskedFor() throws IOException {
+        List<StreamEntry> entries = new ArrayList<>();
+        for (int minute = 0; minute < 60; minute++) {
+            entries.add(entry(1, minute));
+        }
+        save(entry(1, 7), 7 * 60);
+        save(entry(1, 42), 42 * 60);
+
+        MarketDataStream stream = new MarketDataStream(entries, s3, BUCKET, 4, 10);
+
+        assertEquals(nanos(START.plusMinutes(7)), stream.nextMinuteStartNanos());
+        assertEquals(List.of(seconds(7 * 60)), times(stream.next()));
+        assertEquals(List.of(seconds(42 * 60)), times(stream.next()));
+        assertFalse(stream.hasNext());
+        assertEquals(2, s3.gets());
+        assertEquals(60, stream.files());
+        assertEquals(58, stream.missing());
+    }
+
+    @Test
+    void aRunAcrossMidnightKeepsOnlyItsOwnMinutesOfEachDay() throws IOException {
+        LocalDateTime lateFirstDay = START.plusHours(23).plusMinutes(58);
+        List<StreamEntry> entries = new ArrayList<>();
+        for (int minute = 0; minute < 4; minute++) {
+            entries.add(new StreamEntry(1, RecordType.MBP_10, lateFirstDay.plusMinutes(minute)));
+        }
+        // Files before and after the run on both of its days, and one in the run on each day.
+        save(new StreamEntry(1, RecordType.MBP_10, START), 0);
+        save(entries.get(1), 0);
+        save(entries.get(2), 0);
+        save(new StreamEntry(1, RecordType.MBP_10, lateFirstDay.plusMinutes(10)), 0);
+
+        MarketDataStream stream = new MarketDataStream(entries, s3, BUCKET, 2, 10);
+
+        assertEquals(nanos(lateFirstDay.plusMinutes(1)), stream.nextMinuteStartNanos());
+        stream.next();
+        assertEquals(nanos(lateFirstDay.plusMinutes(2)), stream.nextMinuteStartNanos());
+        stream.next();
+        assertFalse(stream.hasNext());
+        assertEquals(2, s3.gets());
+    }
+
+    @Test
+    void aRunWithNoFilesHasNothingToHandBack() {
+        MarketDataStream stream = new MarketDataStream(List.of(entry(1, 0), entry(2, 0)), s3, BUCKET, 2, 10);
+
+        assertFalse(stream.hasNext());
+        assertEquals(2, stream.files());
+        assertEquals(2, stream.missing());
+        assertEquals(0, s3.gets());
+    }
+
     private StreamEntry entry(int securityId, int minute) {
         return new StreamEntry(securityId, RecordType.MBP_10, START.plusMinutes(minute));
     }

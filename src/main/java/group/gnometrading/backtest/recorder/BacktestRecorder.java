@@ -154,6 +154,9 @@ public final class BacktestRecorder {
     private final int rewGross;
     private final int rewShareNanos;
     private final int rewMarketGross;
+    private final int rewGrossQueue;
+    private final int rewMarketGrossQueue;
+    private final int rewMarketPaidQueue;
     private final int rewMarketPaid;
     private final int rewCountingNanos;
     private final int rewOneSidedNanos;
@@ -345,6 +348,9 @@ public final class BacktestRecorder {
         rewShareNanos = rew.addDoubleColumn("share_nanos");
         rewMarketGross = rew.addLongColumn("market_gross");
         rewMarketPaid = rew.addLongColumn("market_paid");
+        rewGrossQueue = rew.addLongColumn("gross_queue");
+        rewMarketGrossQueue = rew.addLongColumn("market_gross_queue");
+        rewMarketPaidQueue = rew.addLongColumn("market_paid_queue");
         rewCountingNanos = rew.addLongColumn("counting_nanos");
         rewOneSidedNanos = rew.addLongColumn("one_sided_nanos");
         rewDepthUnknownNanos = rew.addLongColumn("depth_unknown_nanos");
@@ -674,6 +680,9 @@ public final class BacktestRecorder {
             rewardRecords.setDouble(idx, rewShareNanos, accrual.shareNanos(slot));
             rewardRecords.setLong(idx, rewMarketGross, accrual.marketGross());
             rewardRecords.setLong(idx, rewMarketPaid, accrual.marketPaid());
+            rewardRecords.setLong(idx, rewGrossQueue, accrual.grossQueue(slot));
+            rewardRecords.setLong(idx, rewMarketGrossQueue, accrual.marketGrossQueue());
+            rewardRecords.setLong(idx, rewMarketPaidQueue, accrual.marketPaidQueue());
             rewardRecords.setLong(idx, rewCountingNanos, accrual.countingNanos());
             rewardRecords.setLong(idx, rewOneSidedNanos, accrual.oneSidedNanos());
             rewardRecords.setLong(idx, rewDepthUnknownNanos, accrual.depthUnknownNanos());

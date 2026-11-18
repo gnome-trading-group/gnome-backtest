@@ -66,6 +66,13 @@ public class BacktestConfig {
     public boolean rewards = true;
     /** How often, in simulated seconds, the recorder snapshots what the rewards have accrued. */
     public long rewardsSnapshotSeconds = 3600;
+    /**
+     * Reads each venue's prints as the venue makes them: on Polymarket International a print on one outcome of a market
+     * also trades against the other outcome's book, and is a taker's whole order at its average price. Off, every venue's
+     * prints are read one listing at a time and stop at their own price, as the simulator always read them, for
+     * comparing a run with one made before.
+     */
+    public boolean complementFills = true;
 
     public static BacktestConfig fromYaml(Path path) throws IOException {
         ObjectMapper mapper = new ObjectMapper(new YAMLFactory())

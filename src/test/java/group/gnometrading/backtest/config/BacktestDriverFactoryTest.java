@@ -114,6 +114,39 @@ class BacktestDriverFactoryTest {
     }
 
     @Test
+    void theStrategysUndatedFeeReadsAreAsKnownAtTheRunsAsOfTime() {
+        config.simulationAsOf = "2026-11-17T15:11:14Z";
+        RegistryConnection registry = mock(RegistryConnection.class);
+        when(registry.get(argThat(
+                        path -> path.toString().equals("/api/fees?listingIds=7&knownAsOf=2026-11-17T15:11:14Z"))))
+                .thenAnswer(inv ->
+                        ByteBuffer.wrap("[{\"listingId\": 7, \"timeline\": []}]".getBytes(StandardCharsets.UTF_8)));
+
+        SecurityMaster pinned = BacktestDriverFactory.buildSecurityMaster(config, registry);
+
+        assertEquals(0, pinned.getFeeTimeline(7).size());
+    }
+
+    @Test
+    void anUnsetAsOfTimeIsFixedOnceSoTheStrategyAndSimulatorAgree() {
+        RegistryConnection registry = mock(RegistryConnection.class);
+
+        BacktestDriverFactory.buildSecurityMaster(config, registry);
+        String pinned = config.simulationAsOf;
+        when(registry.get(argThat(path -> path.toString().equals("/api/fees?listingIds=7&knownAsOf=" + pinned))))
+                .thenAnswer(inv ->
+                        ByteBuffer.wrap("[{\"listingId\": 7, \"timeline\": []}]".getBytes(StandardCharsets.UTF_8)));
+
+        assertNotEquals(null, pinned);
+        assertEquals(
+                0,
+                BacktestDriverFactory.buildSecurityMaster(config, registry)
+                        .getFeeTimeline(7)
+                        .size());
+        assertEquals(pinned, config.simulationAsOf);
+    }
+
+    @Test
     void tradedBooksReplayAsTheRecordTheSimulatorMatchesAndOtherStreamsAsConfigured() {
         config.startDate = LocalDateTime.of(2026, 1, 1, 0, 0);
         config.endDate = LocalDateTime.of(2026, 1, 1, 0, 2);

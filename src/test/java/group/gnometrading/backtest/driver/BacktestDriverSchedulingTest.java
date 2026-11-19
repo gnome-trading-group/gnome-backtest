@@ -53,6 +53,7 @@ import group.gnometrading.simulation.exchange.SimulatedExchange;
 import group.gnometrading.sm.Exchange;
 import group.gnometrading.sm.Listing;
 import group.gnometrading.sm.ListingSpec;
+import group.gnometrading.sm.PriceGrid;
 import group.gnometrading.sm.Security;
 import group.gnometrading.strategies.PythonStrategyAgent;
 import group.gnometrading.strategies.StrategyControl;
@@ -614,7 +615,7 @@ class BacktestDriverSchedulingTest {
                     new Stream(STREAM_ID, 1, "KALSHI", "LISTING", LISTING_ID, null, "book", "US", 0, 0L, 0L, true),
                     listing);
             when(securityMaster.getListingSpec(eq(LISTING_ID), anyLong()))
-                    .thenReturn(new ListingSpec(LISTING_ID, 1, 0, 0, 1, 0));
+                    .thenReturn(new ListingSpec(LISTING_ID, PriceGrid.single(1, PriceGrid.OPEN), 0, 0, 1, 0));
 
             ExchangeSimulationConfig simulation = new ExchangeSimulationConfig(
                     new FeeModelConfig.Static(),

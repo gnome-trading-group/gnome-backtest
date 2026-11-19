@@ -5,9 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -35,6 +37,7 @@ import group.gnometrading.simulation.config.SimulationOverrides;
 import group.gnometrading.sm.Exchange;
 import group.gnometrading.sm.Listing;
 import group.gnometrading.sm.ListingSpec;
+import group.gnometrading.sm.PriceGrid;
 import group.gnometrading.sm.Security;
 import group.gnometrading.sm.SimulationParameters;
 import java.nio.ByteBuffer;
@@ -83,7 +86,11 @@ class BacktestDriverFactoryTest {
                 "SYM");
         when(securityMaster.getListing(EXCHANGE_ID, SECURITY_ID)).thenReturn(listing);
         when(securityMaster.getListing(LISTING_ID)).thenReturn(listing);
-        when(securityMaster.getListingSpec(LISTING_ID)).thenReturn(new ListingSpec(LISTING_ID, 1, 0, DOLLAR, 1, 0));
+        when(securityMaster.getListingSpec(LISTING_ID))
+                .thenReturn(new ListingSpec(LISTING_ID, PriceGrid.single(1, PriceGrid.OPEN), 0, DOLLAR, 1, 0));
+        lenient()
+                .when(securityMaster.getListingSpec(eq(LISTING_ID), anyLong()))
+                .thenReturn(new ListingSpec(LISTING_ID, PriceGrid.single(1, PriceGrid.OPEN), 0, DOLLAR, 1, 0));
         when(securityMaster.getSimulationParameters(eq(EXCHANGE_ID), anyString()))
                 .thenReturn(new SimulationParameters(1, EXCHANGE_ID, "1970-01-01T00:00:00.000Z", RECORDED));
     }

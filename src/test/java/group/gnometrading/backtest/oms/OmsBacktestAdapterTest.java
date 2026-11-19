@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 import group.gnometrading.SecurityMaster;
@@ -30,6 +31,7 @@ import group.gnometrading.sequencer.SequencedRingBuffer;
 import group.gnometrading.sm.Exchange;
 import group.gnometrading.sm.Listing;
 import group.gnometrading.sm.ListingSpec;
+import group.gnometrading.sm.PriceGrid;
 import group.gnometrading.sm.Security;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -89,6 +91,9 @@ class OmsBacktestAdapterTest {
                 "SYM");
         when(securityMaster.getListing(EXCHANGE_ID, SECURITY_ID)).thenReturn(listing);
         when(securityMaster.getListing(LISTING_ID)).thenReturn(listing);
+        lenient()
+                .when(securityMaster.getListingSpec(eq(LISTING_ID), anyLong()))
+                .thenReturn(new ListingSpec(LISTING_ID, PriceGrid.single(1, PriceGrid.OPEN), 0, 0, 1, 0));
     }
 
     @Test
@@ -106,7 +111,7 @@ class OmsBacktestAdapterTest {
     void manyRejectedIntentsInOneStepDoNotHang() {
         // Every order is below the minimum size, so each two-sided intent yields two synthetic rejects.
         when(securityMaster.getListingSpec(eq(LISTING_ID), anyLong()))
-                .thenReturn(new ListingSpec(LISTING_ID, 1, 0, 0, 1, 1_000_000));
+                .thenReturn(new ListingSpec(LISTING_ID, PriceGrid.single(1, PriceGrid.OPEN), 0, 0, 1, 1_000_000));
         List<Intent> intents = new ArrayList<>();
         for (int i = 0; i < 200; i++) {
             intents.add(twoSidedIntent(100L, 110L, 10L));
@@ -122,7 +127,7 @@ class OmsBacktestAdapterTest {
     @Test
     void omsRejectsAreCountedByReason() throws Exception {
         when(securityMaster.getListingSpec(eq(LISTING_ID), anyLong()))
-                .thenReturn(new ListingSpec(LISTING_ID, 1, 0, 0, 1, 1_000_000));
+                .thenReturn(new ListingSpec(LISTING_ID, PriceGrid.single(1, PriceGrid.OPEN), 0, 0, 1, 1_000_000));
         BacktestRecorder recorder = new BacktestRecorder(1);
         OrderManagementSystem oms = new OrderManagementSystem(
                 new NullLogger(),
@@ -165,6 +170,8 @@ class OmsBacktestAdapterTest {
                     "S" + i,
                     "S" + i);
             when(securityMaster.getListing(EXCHANGE_ID, securityId)).thenReturn(listing);
+            when(securityMaster.getListingSpec(eq(listing.listingId()), anyLong()))
+                    .thenReturn(new ListingSpec(listing.listingId(), PriceGrid.single(1, PriceGrid.OPEN), 0, 0, 1, 0));
             Intent intent = twoSidedIntent(100L, 110L, 10L);
             intent.encoder.securityId(securityId);
             intents.add(intent);

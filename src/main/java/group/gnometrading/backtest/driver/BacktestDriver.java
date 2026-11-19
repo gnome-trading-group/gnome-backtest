@@ -69,7 +69,7 @@ public final class BacktestDriver {
     private final Map<SimulatedExchange, Links> links = new IdentityHashMap<>();
     // A listing's exchange to the exchange of the other outcome of its market, on venues that match the two against
     // each other but print the trade once: each print also reaches the other book.
-    private final Map<SimulatedExchange, Complement> complements = new IdentityHashMap<>();
+    private final Map<SimulatedExchange, SimulatedExchange> complements = new IdentityHashMap<>();
     // What has reached the strategy but not been handled yet, one entry per arrival.
     private final ArrayDeque<Arrival> strategyInbox = new ArrayDeque<>();
     private final StrategyAgent strategy;
@@ -207,14 +207,14 @@ public final class BacktestDriver {
 
     /** Pairs each listing with its other outcome's, by listing id, both ways; the run must simulate every one. */
     public void setComplements(Map<Integer, Integer> listingPairs) {
-        Map<SimulatedExchange, Complement> pairs = new IdentityHashMap<>();
+        Map<SimulatedExchange, SimulatedExchange> pairs = new IdentityHashMap<>();
         for (Map.Entry<Integer, Integer> pair : listingPairs.entrySet()) {
             SimulatedExchange exchange = exchangeOf(pair.getKey());
             SimulatedExchange other = exchangeOf(pair.getValue());
             if (exchange == null || other == null) {
                 throw new IllegalArgumentException("A complement pair names a listing the run doesn't simulate");
             }
-            pairs.put(exchange, new Complement(other, pair.getValue()));
+            pairs.put(exchange, other);
         }
         complements.clear();
         complements.putAll(pairs);
@@ -373,19 +373,10 @@ public final class BacktestDriver {
                 Links link = links.get(exchange);
                 long received = link.marketDataArrival().arrival(schema, timestamp);
                 enqueue(link.marketData().arrival(received, 0), EventType.LOCAL_MARKET_DATA, schema);
-                List<OrderExecutionReport> reports = exchange.onMarketData(schema);
-                if (rewards != null) {
-                    rewards.onQueue(timestamp, streams.listingId(schema.streamId()), exchange);
-                }
-                deliverReports(exchange, timestamp, reports);
-                Complement complement = complements.get(exchange);
+                deliverReports(exchange, timestamp, exchange.onMarketData(schema));
+                SimulatedExchange complement = complements.get(exchange);
                 if (complement != null && isTrade(schema)) {
-                    List<OrderExecutionReport> complementReports =
-                            complement.exchange().onComplementTrade(schema);
-                    if (rewards != null) {
-                        rewards.onQueue(timestamp, complement.listingId(), complement.exchange());
-                    }
-                    deliverReports(complement.exchange(), timestamp, complementReports);
+                    deliverReports(complement, timestamp, complement.onComplementTrade(schema));
                 }
             }
             case EXCHANGE_MESSAGE -> {
@@ -591,7 +582,4 @@ public final class BacktestDriver {
     private SimulatedExchange getExchangeForMessage(LocalMessage message) {
         return exchanges.get(message.exchangeId()).get(message.securityId());
     }
-
-    /** The other outcome's exchange, and its listing for the rewards estimate. */
-    private record Complement(SimulatedExchange exchange, int listingId) {}
 }

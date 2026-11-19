@@ -38,7 +38,7 @@ import group.gnometrading.simulation.config.ExchangeSimulationConfig;
 import group.gnometrading.simulation.config.SimulationResolver;
 import group.gnometrading.simulation.exchange.SimulatedExchange;
 import group.gnometrading.simulation.latency.LatencySeeds;
-import group.gnometrading.simulation.rewards.TickSize;
+import group.gnometrading.simulation.rewards.PriceGrids;
 import group.gnometrading.sm.Listing;
 import group.gnometrading.sm.ListingSpec;
 import group.gnometrading.sm.incentive.IncentiveTimeline;
@@ -163,11 +163,11 @@ public final class BacktestDriverFactory {
             int listingId = rl.listing.listingId();
             IncentiveTimeline programs = securityMaster.getIncentiveTimeline(listingId, config.simulationAsOf);
             ListingSpec current = securityMaster.getListingSpec(listingId);
-            TickSize tick = nanos -> {
+            PriceGrids grids = nanos -> {
                 ListingSpec spec = securityMaster.getListingSpec(listingId, nanos);
-                return (spec != null ? spec : current).tickSize();
+                return (spec != null ? spec : current).grid();
             };
-            if (rewards.bind(rl.listing, programs, tick)) {
+            if (rewards.bind(rl.listing, programs, grids)) {
                 bound++;
             }
         }

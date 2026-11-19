@@ -24,6 +24,7 @@ import group.gnometrading.simulation.latency.StaticLatency;
 import group.gnometrading.simulation.queues.OptimisticQueueModel;
 import group.gnometrading.sm.Exchange;
 import group.gnometrading.sm.Listing;
+import group.gnometrading.sm.PriceGrid;
 import group.gnometrading.sm.Security;
 import group.gnometrading.sm.incentive.IncentiveProgram;
 import group.gnometrading.sm.incentive.IncentiveTimeline;
@@ -40,6 +41,7 @@ class BacktestRewardsTest {
     private static final long SECOND = 1_000_000_000L;
     private static final long HOUR = 3600 * SECOND;
     private static final long CENT = 10_000_000L;
+    private static final PriceGrid CENTS = PriceGrid.single(CENT, 100 * CENT);
     private static final long DOLLAR = 100 * CENT;
     private static final long CONTRACT = 1_000_000L;
     private static final long PERIOD = 10_000 * SECOND;
@@ -101,7 +103,7 @@ class BacktestRewardsTest {
     }
 
     private void bindYes() {
-        assertTrue(rewards.bind(kalshi("KXRT-VIO-60"), program(), nanos -> CENT));
+        assertTrue(rewards.bind(kalshi("KXRT-VIO-60"), program(), nanos -> CENTS));
         rewards.begin(T0);
     }
 
@@ -169,9 +171,7 @@ class BacktestRewardsTest {
                 .askSize9(nullSize);
         schema.encoder.flags().clear().badData(bad);
         rewards.onMarketData(at, LISTING_ID, schema);
-        final List<OrderExecutionReport> reports = exchange.onMarketData(schema);
-        rewards.onQueue(at, LISTING_ID, exchange);
-        report(at, reports);
+        report(at, exchange.onMarketData(schema));
     }
 
     private void report(final long at, final List<OrderExecutionReport> reports) {
@@ -250,51 +250,46 @@ class BacktestRewardsTest {
     }
 
     @Test
-    void joiningBehindMoreThanTheTargetEarnsOnlyUnderTheLevelReading() {
+    void joiningBehindMoreThanTheTargetStillEarnsItsShareOfTheLevel() {
         bindYes();
         book(T0, 50, 52, false);
         submit(T0, 1, Side.Bid, 50, 500);
         submit(T0, 2, Side.Ask, 52, 500);
         rewards.finish(T0 + PERIOD);
 
-        // Level: 500 of each side's 2,500. Queue: the 2,000 ahead fill the 1,000 the target needs.
+        // The 2,000 ahead already meet the target, and our 500 behind them still count: 500 of each side's 2,500.
         assertEquals(20 * DOLLAR, last("gross"), 1);
-        assertEquals(0, last("gross_queue"));
-        assertEquals(0, last("market_gross_queue"));
-        assertEquals(0, last("market_paid_queue"));
+        assertEquals(20 * DOLLAR, last("market_paid"));
     }
 
     @Test
-    void cancelsAheadMoveAnOrderIntoTheSizeTheQueueReadingCounts() {
+    void eachLevelIsScoredAtTheSizeItHadThen() {
         bindYes();
         book(T0, 50, 52, false);
         submit(T0, 1, Side.Bid, 50, 500);
         submit(T0, 2, Side.Ask, 52, 500);
-        // The optimistic queue model takes the 1,500 cancelled from each level as ahead of us: 500 stay ahead.
         book(T0 + 5000 * SECOND, 50, 52, false, 500);
         rewards.finish(T0 + PERIOD);
 
-        // $25 a side per half. Level: 20% then 50% a side. Queue: nothing, then our 500 of the first 1,000.
+        // $25 a side per half: 20% a side, then 50% once everyone else's size fell to 500.
         assertEquals(35 * DOLLAR, last("gross"), 1);
-        assertEquals(25 * DOLLAR, last("gross_queue"), 1);
-        assertEquals(last("market_gross_queue") / CENT * CENT, last("market_paid_queue"));
     }
 
     @Test
-    void growingAnOrderSendsItToTheBackOfTheQueue() {
+    void aResizedOrderScoresItsNewSize() {
         bindYes();
         book(T0, 50, 52, false);
         submit(T0, 1, Side.Bid, 50, 500);
         submit(T0, 2, Side.Ask, 52, 500);
-        // Cancels ahead leave 500 in front of each; then others join behind us.
         book(T0 + 2500 * SECOND, 50, 52, false, 500);
         book(T0 + 5000 * SECOND, 50, 52, false, 2000);
         modify(T0 + 5000 * SECOND, 1, 50, 600);
         rewards.finish(T0 + PERIOD);
 
-        // $50 a side over the period. Queue: nothing for a quarter, then our 500 of the first 1,000 a side for a
-        // quarter, then only the ask's, the bigger bid having rejoined behind everyone else's 2,000.
-        assertEquals(25 * DOLLAR, last("gross_queue"), 1);
+        // $50 a side over the period. A quarter at 20% a side, a quarter at 50% a side, then half with the bid at
+        // 600 of 2,600 and the ask at 500 of 2,500.
+        final long bid = (long) (25.0 * DOLLAR * 600 / 2600);
+        assertEquals(5 * DOLLAR + 25 * DOLLAR / 2 + bid + 5 * DOLLAR, last("gross"), 2);
     }
 
     @Test
@@ -336,7 +331,7 @@ class BacktestRewardsTest {
 
     @Test
     void programsOutsideTheRunAreLeftOutAndTimeBeforeItIsNotScored() {
-        assertTrue(rewards.bind(kalshi("KXRT-VIO-60"), program(), nanos -> CENT));
+        assertTrue(rewards.bind(kalshi("KXRT-VIO-60"), program(), nanos -> CENTS));
         // A run starting after the program's period: nothing of it is recorded.
         rewards.begin(T0 + PERIOD + HOUR);
         rewards.finish(T0 + PERIOD + 2 * HOUR);
@@ -345,7 +340,7 @@ class BacktestRewardsTest {
 
     @Test
     void aRunStartingMidPeriodScoresFromItsStart() {
-        assertTrue(rewards.bind(kalshi("KXRT-VIO-60"), program(), nanos -> CENT));
+        assertTrue(rewards.bind(kalshi("KXRT-VIO-60"), program(), nanos -> CENTS));
         rewards.begin(T0 + 5000 * SECOND);
         book(T0 + 6000 * SECOND, 50, 52, false);
         rewards.finish(T0 + PERIOD);
@@ -362,8 +357,8 @@ class BacktestRewardsTest {
                 null,
                 "0xabc:1",
                 "");
-        assertFalse(rewards.bind(polymarket, program(), nanos -> CENT));
-        assertFalse(rewards.bind(kalshi("KXRT-VIO-60"), new IncentiveTimeline(List.of()), nanos -> CENT));
+        assertFalse(rewards.bind(polymarket, program(), nanos -> CENTS));
+        assertFalse(rewards.bind(kalshi("KXRT-VIO-60"), new IncentiveTimeline(List.of()), nanos -> CENTS));
         assertTrue(rewards.isEmpty());
     }
 }

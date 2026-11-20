@@ -26,6 +26,8 @@ import group.gnometrading.oms.state.PooledOrderStateManager;
 import group.gnometrading.schemas.Intent;
 import group.gnometrading.schemas.IntentDecoder;
 import group.gnometrading.schemas.Mbp10Schema;
+import group.gnometrading.schemas.OrderRole;
+import group.gnometrading.schemas.Side;
 import group.gnometrading.sequencer.GlobalSequence;
 import group.gnometrading.sequencer.SequencedRingBuffer;
 import group.gnometrading.sm.Exchange;
@@ -181,6 +183,41 @@ class OmsBacktestAdapterTest {
                 assertTimeoutPreemptively(Duration.ofSeconds(10), () -> wide.processIntents(1L, intents));
 
         assertEquals(300, messages.size());
+    }
+
+    @Test
+    void ordersCarryTheirIntentsRoleAndEpisode() throws Exception {
+        List<LocalMessage> quotes = adapter.processIntents(1L, List.of(bidIntent(100L, 10L)));
+        LocalMessage.OrderMessage quote = assertInstanceOf(LocalMessage.OrderMessage.class, quotes.get(0));
+        assertEquals(OrderRole.QUOTE, quote.order().decoder.role());
+        assertEquals(0L, quote.order().decoder.episodeId());
+
+        List<LocalMessage> takes = adapter.processIntents(2L, List.of(hedgeIntent(120L, 5L, 42L)));
+        LocalMessage.OrderMessage hedge = takes.stream()
+                .filter(LocalMessage.OrderMessage.class::isInstance)
+                .map(LocalMessage.OrderMessage.class::cast)
+                .findFirst()
+                .orElseThrow();
+        assertEquals(OrderRole.HEDGE, hedge.order().decoder.role());
+        assertEquals(42L, hedge.order().decoder.episodeId());
+    }
+
+    private static Intent hedgeIntent(long limitPrice, long size, long episodeId) {
+        Intent intent = new Intent();
+        intent.encoder
+                .strategyId(STRATEGY_ID)
+                .exchangeId(EXCHANGE_ID)
+                .securityId(SECURITY_ID)
+                .bidPrice(IntentDecoder.bidPriceNullValue())
+                .bidSize(IntentDecoder.bidSizeNullValue())
+                .askPrice(IntentDecoder.askPriceNullValue())
+                .askSize(IntentDecoder.askSizeNullValue())
+                .takeSide(Side.Bid)
+                .takeSize(size)
+                .takeLimitPrice(limitPrice)
+                .takeRole(OrderRole.HEDGE)
+                .episodeId(episodeId);
+        return intent;
     }
 
     private static Intent twoSidedIntent(long bidPrice, long askPrice, long size) {

@@ -19,6 +19,7 @@ import group.gnometrading.schemas.Ohlcv1sSchema;
 import group.gnometrading.schemas.Order;
 import group.gnometrading.schemas.OrderExecutionReport;
 import group.gnometrading.schemas.OrderExecutionReportDecoder;
+import group.gnometrading.schemas.OrderRole;
 import group.gnometrading.schemas.RejectReason;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.Statics;
@@ -123,6 +124,8 @@ public final class BacktestRecorder {
     private final int ordTotalCost;
     private final int ordTotalFee;
     private final int ordFinalStatus;
+    private final int ordRole;
+    private final int ordEpisodeId;
 
     // -------------------------------------------------------------------------
     // Fill column indices
@@ -142,6 +145,8 @@ public final class BacktestRecorder {
     private final int filBookBidPrice;
     private final int filBookAskPrice;
     private final int filLiquidity;
+    private final int filRole;
+    private final int filEpisodeId;
 
     // Reward column indices
     private final int rewTimestamp;
@@ -199,6 +204,8 @@ public final class BacktestRecorder {
         long finalPrice;
         long finalSize;
         int modifyCount;
+        byte role;
+        long episodeId;
         /**
          * Modifies and cancels sent and not yet answered, oldest first: {@code {price, size}} for a modify,
          * {@link #PENDING_CANCEL} for a cancel. The venue answers them in turn, so the oldest is the one an ack or a
@@ -310,6 +317,8 @@ public final class BacktestRecorder {
         ordTotalCost = ord.addLongColumn("total_cost");
         ordTotalFee = ord.addDoubleColumn("total_fee");
         ordFinalStatus = ord.addByteColumn("final_status");
+        ordRole = ord.addByteColumn("order_role");
+        ordEpisodeId = ord.addLongColumn("episode_id");
         ord.freeze();
         orderRecords = ord;
 
@@ -329,6 +338,8 @@ public final class BacktestRecorder {
         filBookBidPrice = fil.addLongColumn("book_bid_price");
         filBookAskPrice = fil.addLongColumn("book_ask_price");
         filLiquidity = fil.addByteColumn("liquidity");
+        filRole = fil.addByteColumn("order_role");
+        filEpisodeId = fil.addLongColumn("episode_id");
         fil.freeze();
         fillRecords = fil;
 
@@ -420,6 +431,8 @@ public final class BacktestRecorder {
         ifo.submitSize = order.decoder.size();
         ifo.finalPrice = ifo.submitPrice;
         ifo.finalSize = ifo.submitSize;
+        ifo.role = encodeRole(order.decoder.role());
+        ifo.episodeId = order.decoder.episodeId();
         inFlight.put(clientOid, ifo);
     }
 
@@ -650,6 +663,11 @@ public final class BacktestRecorder {
             fillRecords.setLong(idx, filBookAskPrice, bbo[1]);
         }
         fillRecords.setByte(idx, filLiquidity, encodeLiquidity(report.decoder.liquidity()));
+        InFlightOrder ifo = inFlight.get(clientOid);
+        if (ifo != null) {
+            fillRecords.setByte(idx, filRole, ifo.role);
+            fillRecords.setLong(idx, filEpisodeId, ifo.episodeId);
+        }
     }
 
     /**
@@ -679,6 +697,11 @@ public final class BacktestRecorder {
             rewardRecords.setLong(idx, rewDepthUnknownNanos, accrual.depthUnknownNanos());
             rewardRecords.setLong(idx, rewNoDataNanos, accrual.noDataNanos());
         }
+    }
+
+    // The schema's OrderRole values, with an unset role read as NONE.
+    private static byte encodeRole(OrderRole role) {
+        return role == OrderRole.NULL_VAL ? (byte) OrderRole.NONE.value() : (byte) role.value();
     }
 
     private static byte encodeLiquidity(Liquidity liquidity) {
@@ -733,6 +756,8 @@ public final class BacktestRecorder {
         orderRecords.setLong(idx, ordTotalCost, ifo.totalCost);
         orderRecords.setDouble(idx, ordTotalFee, ifo.totalFee);
         orderRecords.setByte(idx, ordFinalStatus, status);
+        orderRecords.setByte(idx, ordRole, ifo.role);
+        orderRecords.setLong(idx, ordEpisodeId, ifo.episodeId);
     }
 
     // =========================================================================

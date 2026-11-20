@@ -13,6 +13,7 @@ import group.gnometrading.schemas.ModifyOrder;
 import group.gnometrading.schemas.Order;
 import group.gnometrading.schemas.OrderExecutionReport;
 import group.gnometrading.schemas.OrderExecutionReportDecoder;
+import group.gnometrading.schemas.OrderRole;
 import group.gnometrading.schemas.OrderStatus;
 import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Side;
@@ -819,6 +820,68 @@ class BacktestRecorderTest {
 
         assertEquals(0.0, doubleColumn(recorder.getFillRecords(), "fee")[0]);
         assertEquals(0.0, doubleColumn(recorder.getOrderRecords(), "total_fee")[0]);
+    }
+
+    @Test
+    void ordersAndFillsCarryTheOrdersRoleAndEpisode() {
+        long clientOid = 5L;
+        long price = 10_000_000L;
+        Order hedge = makeLimitOrder(1, 100, price, 100L, Side.Bid, clientOid);
+        hedge.encoder.role(OrderRole.HEDGE).episodeId(42L);
+        recorder.onOrderSubmitted(1000L, hedge);
+        recorder.onExecution(
+                1001L,
+                makeExecReport(
+                        1, 100, ExecType.PARTIAL_FILL, OrderStatus.PARTIALLY_FILLED, price, 40, 40, 60, 0, clientOid),
+                0,
+                Side.Bid);
+        recorder.onExecution(
+                1002L,
+                makeExecReport(1, 100, ExecType.FILL, OrderStatus.FILLED, price, 60, 100, 0, 0, clientOid),
+                0,
+                Side.Bid);
+
+        RecordBuffer fills = recorder.getFillRecords();
+        assertEquals(OrderRole.HEDGE.value(), byteColumn(fills, "order_role")[0]);
+        assertEquals(OrderRole.HEDGE.value(), byteColumn(fills, "order_role")[1]);
+        assertEquals(42L, longColumn(fills, "episode_id")[0]);
+        assertEquals(42L, longColumn(fills, "episode_id")[1]);
+        assertEquals(OrderRole.HEDGE.value(), byteColumn(recorder.getOrderRecords(), "order_role")[0]);
+        assertEquals(42L, orderLong("episode_id"));
+    }
+
+    @Test
+    void anOrderWithoutRoleOrEpisodeRecordsNoneAndZero() {
+        long clientOid = 6L;
+        recorder.onOrderSubmitted(1000L, makeLimitOrder(1, 100, 10_000_000L, 10L, Side.Bid, clientOid));
+        recorder.onExecution(
+                1001L,
+                makeExecReport(1, 100, ExecType.FILL, OrderStatus.FILLED, 10_000_000L, 10, 10, 0, 0, clientOid),
+                0,
+                Side.Bid);
+
+        assertEquals(OrderRole.NONE.value(), byteColumn(recorder.getFillRecords(), "order_role")[0]);
+        assertEquals(0L, longColumn(recorder.getFillRecords(), "episode_id")[0]);
+        assertEquals(OrderRole.NONE.value(), byteColumn(recorder.getOrderRecords(), "order_role")[0]);
+        assertEquals(0L, orderLong("episode_id"));
+    }
+
+    private static byte[] byteColumn(RecordBuffer buffer, String name) {
+        for (ColumnDef col : buffer.getColumns()) {
+            if (col.name().equals(name)) {
+                return buffer.getByteColumn(col.columnIndex());
+            }
+        }
+        throw new IllegalArgumentException("No column " + name);
+    }
+
+    private static long[] longColumn(RecordBuffer buffer, String name) {
+        for (ColumnDef col : buffer.getColumns()) {
+            if (col.name().equals(name)) {
+                return buffer.getLongColumn(col.columnIndex());
+            }
+        }
+        throw new IllegalArgumentException("No column " + name);
     }
 
     private static double[] doubleColumn(RecordBuffer buffer, String name) {
